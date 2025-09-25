@@ -189,8 +189,12 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
-    parser.add_argument('--local_rank', default=0, type=int)
-
+    parser.add_argument(
+        '--local_rank', '--local-rank',
+        dest='local_rank',
+        default=0,
+        type=int
+    )
 
     # my parameters
     parser.add_argument('--normalize', action='store_true')
@@ -270,14 +274,7 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = (
-        f"student_{args.model}_teacher_{args.teacher_model}_"
-        f"normalize_{args.normalize}_distance_{args.distance}_"
-        f"beta_{args.distillation_beta}_wsample_{args.w_sample}_"
-        f"wpatch_{args.w_patch}_wrand_{args.w_rand}_"
-        f"sids_{'_'.join(map(str, args.s_id))}_"
-        f"tids_{'_'.join(map(str, args.t_id))}"
-    )    
+    extra_info = f"normalize_{args.normalize}_distance_{args.distance}_beta_{args.distillation_beta}_wsample_{args.w_sample}_wpatch_{args.w_patch}_wrand_{args.w_rand}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
     if args.use_prototypes:
         extra_info += f"_prototypes_{args.prototypes_number}"
     output_dir = output_dir / extra_info
@@ -297,6 +294,9 @@ def main(args):
     )
     register_forward(model, args.model)
 
+
+
+
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -312,7 +312,7 @@ def main(args):
                 del checkpoint_model[k]
 
         # interpolate position embedding
-        pos_embed_checkpoint = checkpoint_model['pos_embed']
+        pos_embed_checkpoint = checkpoint_model['module.pos_embed']
         embedding_size = pos_embed_checkpoint.shape[-1]
         num_patches = model.patch_embed.num_patches
         num_extra_tokens = model.pos_embed.shape[-2] - num_patches
@@ -329,7 +329,7 @@ def main(args):
             pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
         pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
         new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
-        checkpoint_model['pos_embed'] = new_pos_embed
+        checkpoint_model['module.pos_embed'] = new_pos_embed
 
         model.load_state_dict(checkpoint_model, strict=False)
 
@@ -445,17 +445,7 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
-
-        # Fix keys by removing "module."
-        state_dict = checkpoint["model"]
-        new_state_dict = {}
-        for k, v in state_dict.items():
-            new_key = k.replace("module.", "")
-            new_state_dict[new_key] = v
-
-        # Load fixed state dict
-        model_without_ddp.load_state_dict(new_state_dict, strict=False)
-
+        model_without_ddp.load_state_dict(checkpoint['model'])
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
