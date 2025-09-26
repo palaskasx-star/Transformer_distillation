@@ -434,7 +434,7 @@ def main(args):
             projectors_nets.append(None)
         criterion = DistillationLoss(criterion, teacher_model, prototypes, projectors_nets, args)
 
-    output_dir = Path(args.output_dir)
+    #output_dir = Path(args.output_dir)
     if args.resume:
         if args.resume.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
