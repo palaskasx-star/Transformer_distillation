@@ -39,7 +39,7 @@ class DistillationLoss(nn.Module):
         self.w_rand = args.w_rand
         self.K = args.K
 
-        self.normalize = args.distance
+        self.normalize = args.normalize
         self.distance = args.distance
 
         self.prototypes = prototypes
