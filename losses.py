@@ -14,6 +14,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import torch.distributed as dist
 
 
 class DistillationLoss(nn.Module):
@@ -221,9 +222,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
 
     M_s = f_s @ prototypes.t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
+    q1 = sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
 
     p1 = F.softmax(M_s / temperature, dim=2)
@@ -278,9 +279,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
     
     M_s = f_s @ prototypes.t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
+    q1 = sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
@@ -306,7 +307,7 @@ def merge(x, max_patch_num=196):
 
 
 @torch.no_grad()
-def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05):
+def sinkhorn(out, nmb_iters=3, epsilon=0.05):
     """
     out: tensor of shape [batch_size, n_prototypes]
     Returns: balanced assignments Q (batch_size x n_prototypes)
@@ -329,3 +330,29 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05):
 
     Q *= B  # undo normalization over samples
     return Q.permute(0, 2, 1).contiguous()  # bach to T x B x K
+
+@torch.no_grad()
+def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
+    Q = torch.exp(out / epsilon).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
+    B = Q.shape[2] * world_size # number of samples to assign
+    print("B:", B)
+    K = Q.shape[1] # how many prototypes
+
+    # make the matrix sums to 1
+    sum_Q = Q.sum(dim=(1, 2), keepdim=True)
+    dist.all_reduce(sum_Q)
+    Q /= sum_Q
+
+    for it in range(nmb_iters):
+        # normalize each row: total weight per prototype must be 1/K
+        sum_of_rows = torch.sum(Q, dim=2, keepdim=True)
+        dist.all_reduce(sum_of_rows)
+        Q /= sum_of_rows
+        Q /= K
+
+        # normalize each column: total weight per sample must be 1/B
+        Q /= torch.sum(Q, dim=1, keepdim=True)
+        Q /= B
+
+    Q *= B # the colomns must sum to 1 so that Q is an assignment
+    return Q.permute(0, 2, 1)
