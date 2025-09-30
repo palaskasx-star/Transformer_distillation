@@ -312,7 +312,7 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05):
     Returns: balanced assignments Q (batch_size x n_prototypes)
     """
     T, B, K = out.shape
-    print(T)
+    print(T, B, K)
     Q = torch.exp(out / epsilon).permute(0, 2, 1)  # T x K x B
 
 
