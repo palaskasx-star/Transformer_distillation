@@ -189,12 +189,8 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
-    parser.add_argument(
-        '--local_rank', '--local-rank',
-        dest='local_rank',
-        default=0,
-        type=int
-    )
+    parser.add_argument('--local_rank', default=0, type=int)
+
 
     # my parameters
     parser.add_argument('--normalize', action='store_true')
@@ -499,18 +495,18 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
                 
-            if (epoch + 1) % 20 == 0:
-                checkpoint_paths = [output_dir / f'checkpoint_epoch_{epoch + 1}.pth']
-                for checkpoint_path in checkpoint_paths:
-                    utils.save_on_master({
-                        'model': model_without_ddp.state_dict(),
-                        'optimizer': optimizer.state_dict(),
-                        'lr_scheduler': lr_scheduler.state_dict(),
-                        'epoch': epoch,
-                        'model_ema': get_state_dict(model_ema),
-                        'scaler': loss_scaler.state_dict(),
-                        'args': args,
-                    }, checkpoint_path)     
+                if (epoch + 1) % 20 == 0:
+                    checkpoint_paths = [output_dir / f'checkpoint_epoch_{epoch + 1}.pth']
+                    for checkpoint_path in checkpoint_paths:
+                        utils.save_on_master({
+                            'model': model_without_ddp.state_dict(),
+                            'optimizer': optimizer.state_dict(),
+                            'lr_scheduler': lr_scheduler.state_dict(),
+                            'epoch': epoch,
+                            'model_ema': get_state_dict(model_ema),
+                            'scaler': loss_scaler.state_dict(),
+                            'args': args,
+                        }, checkpoint_path)     
 
         test_stats = evaluate(data_loader_val, model, device, writer, epoch)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
