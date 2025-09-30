@@ -46,6 +46,8 @@ class DistillationLoss(nn.Module):
         self.prototypes = prototypes
         self.projectors_nets = projectors_nets
 
+        self.world_size = args.world_size
+
     def forward(self, inputs, outputs, labels):
         """
         Args:
