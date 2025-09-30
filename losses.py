@@ -87,14 +87,14 @@ class DistillationLoss(nn.Module):
         loss_dist = self.alpha * distillation_loss
         loss_mf_sample, loss_mf_patch, loss_mf_rand = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
                                   self.layer_ids_t, self.K, self.w_sample, self.w_patch, self.w_rand, normalize=self.normalize, distance=self.distance,
-                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets)  # manifold distillation loss
+                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size)  # manifold distillation loss
         loss_mf_sample = self.beta * loss_mf_sample
         loss_mf_patch = self.beta * loss_mf_patch
         loss_mf_rand = self.beta * loss_mf_rand
         return loss_base, loss_dist, loss_mf_sample, loss_mf_patch, loss_mf_rand
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_sample, w_patch, w_rand, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_sample, w_patch, w_rand, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1):
     losses = [[], [], []]  # loss_mf_sample, loss_mf_patch, loss_mf_rand
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         extra_tk_num = block_outs_s[0].shape[1] - block_outs_t[0].shape[1]
@@ -105,7 +105,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_sample, w
             F_t = merge(F_t, max_patch_num)
         if prototypes[0] is not None:
             loss_mf_patch, loss_mf_sample, loss_mf_rand = layer_mf_loss_prototypes(
-                F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx])
+                F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
         else:
             loss_mf_patch, loss_mf_sample, loss_mf_rand = layer_mf_loss(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx])
@@ -205,7 +205,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
 
     return loss_mf_patch, loss_mf_sample, loss_mf_rand
 
-def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1):
+def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
     prototypes = F.normalize(prototypes, dim=-1, p=2)
 
     # manifold loss among different patches (intra-sample)
