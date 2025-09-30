@@ -14,6 +14,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import torch.distributed as dist
 
 
 class DistillationLoss(nn.Module):
@@ -44,6 +45,8 @@ class DistillationLoss(nn.Module):
 
         self.prototypes = prototypes
         self.projectors_nets = projectors_nets
+
+        self.world_size = args.world_size
 
     def forward(self, inputs, outputs, labels):
         """
@@ -86,14 +89,14 @@ class DistillationLoss(nn.Module):
         loss_dist = self.alpha * distillation_loss
         loss_mf_sample, loss_mf_patch, loss_mf_rand = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
                                   self.layer_ids_t, self.K, self.w_sample, self.w_patch, self.w_rand, normalize=self.normalize, distance=self.distance,
-                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets)  # manifold distillation loss
+                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size)  # manifold distillation loss
         loss_mf_sample = self.beta * loss_mf_sample
         loss_mf_patch = self.beta * loss_mf_patch
         loss_mf_rand = self.beta * loss_mf_rand
         return loss_base, loss_dist, loss_mf_sample, loss_mf_patch, loss_mf_rand
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_sample, w_patch, w_rand, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_sample, w_patch, w_rand, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1):
     losses = [[], [], []]  # loss_mf_sample, loss_mf_patch, loss_mf_rand
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         extra_tk_num = block_outs_s[0].shape[1] - block_outs_t[0].shape[1]
@@ -104,7 +107,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_sample, w
             F_t = merge(F_t, max_patch_num)
         if prototypes[0] is not None:
             loss_mf_patch, loss_mf_sample, loss_mf_rand = layer_mf_loss_prototypes(
-                F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx])
+                F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
         else:
             loss_mf_patch, loss_mf_sample, loss_mf_rand = layer_mf_loss(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx])
@@ -204,7 +207,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
 
     return loss_mf_patch, loss_mf_sample, loss_mf_rand
 
-def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1):
+def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
     prototypes = F.normalize(prototypes, dim=-1, p=2)
 
     # manifold loss among different patches (intra-sample)
@@ -221,9 +224,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
 
     M_s = f_s @ prototypes.t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
+    q1 = sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
 
     p1 = F.softmax(M_s / temperature, dim=2)
@@ -248,9 +251,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
     
     M_s = f_s @ prototypes.t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, world_size=world_size).detach()
     M_t = f_t @ prototypes.t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, world_size=world_size).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
@@ -278,9 +281,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
     
     M_s = f_s @ prototypes.t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
+    q1 = sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
@@ -304,13 +307,15 @@ def merge(x, max_patch_num=196):
     merged = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, m * m, -1)
     return merged
 
+
 @torch.no_grad()
-def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05):
+def sinkhorn(out, nmb_iters=3, epsilon=0.05):
     """
     out: tensor of shape [batch_size, n_prototypes]
     Returns: balanced assignments Q (batch_size x n_prototypes)
     """
     T, B, K = out.shape
+    print(T, B, K)
     Q = torch.exp(out / epsilon).permute(0, 2, 1)  # T x K x B
 
 
@@ -327,3 +332,29 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05):
 
     Q *= B  # undo normalization over samples
     return Q.permute(0, 2, 1).contiguous()  # bach to T x B x K
+
+@torch.no_grad()
+def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
+    Q = torch.exp(out / epsilon).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
+    B = Q.shape[2] * world_size # number of samples to assign
+    print("B:", B)
+    K = Q.shape[1] # how many prototypes
+
+    # make the matrix sums to 1
+    sum_Q = Q.sum(dim=(1, 2), keepdim=True)
+    dist.all_reduce(sum_Q)
+    Q /= sum_Q
+
+    for it in range(nmb_iters):
+        # normalize each row: total weight per prototype must be 1/K
+        sum_of_rows = torch.sum(Q, dim=2, keepdim=True)
+        dist.all_reduce(sum_of_rows)
+        Q /= sum_of_rows
+        Q /= K
+
+        # normalize each column: total weight per sample must be 1/B
+        Q /= torch.sum(Q, dim=1, keepdim=True)
+        Q /= B
+
+    Q *= B # the colomns must sum to 1 so that Q is an assignment
+    return Q.permute(0, 2, 1)
