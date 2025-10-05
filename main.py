@@ -1,3 +1,4 @@
+@@ -1,543 +1,530 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
 #
@@ -200,10 +201,10 @@ def get_args_parser():
     parser.add_argument('--normalize', action='store_true')
     parser.add_argument('--distance', default='MSE', choices=['MSE', 'KL'], type=str, help="")
 
-    
+
     parser.add_argument('--use-prototypes', action='store_true')
     parser.add_argument('--prototypes-number', default=256, type=int)
-    
+
     return parser
 
 
@@ -281,7 +282,7 @@ def main(args):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     writer = get_writer(output_dir)
-    
+
     print(f"Creating model: {args.model}")
     model = create_model(
         args.model,
@@ -372,7 +373,7 @@ def main(args):
             args.teacher_model,
             pretrained=False,
             num_classes=args.nb_classes,
-            #global_pool='avg',
+            global_pool='avg',
         )
         register_forward(teacher_model, args.teacher_model)
 
@@ -381,7 +382,7 @@ def main(args):
                 args.teacher_path, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.teacher_path, map_location='cpu')
-        
+
         # process distributed model
         from collections import OrderedDict
         new_state_dict = OrderedDict()
@@ -395,10 +396,10 @@ def main(args):
         teacher_model.load_state_dict(new_state_dict)
         teacher_model.to(device)
         teacher_model.eval()
-    
+
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
-        
+
         with torch.no_grad():
             # Teacher
             _, features_teacher = teacher_model(images)
@@ -419,7 +420,7 @@ def main(args):
             # Replace random matrices with learnable linear layers (projector networks)
             projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
             projectors_nets.append(projector)
-        
+
         for proto in prototypes:
             optimizer.add_param_group({'params': proto})
         for proj in projectors_nets:
@@ -498,6 +499,19 @@ def main(args):
                     'scaler': loss_scaler.state_dict(),
                     'args': args,
                 }, checkpoint_path)
+                
+                if (epoch + 1) % 20 == 0:
+                    checkpoint_paths = [output_dir / f'checkpoint_epoch_{epoch + 1}.pth']
+                    for checkpoint_path in checkpoint_paths:
+                        utils.save_on_master({
+                            'model': model_without_ddp.state_dict(),
+                            'optimizer': optimizer.state_dict(),
+                            'lr_scheduler': lr_scheduler.state_dict(),
+                            'epoch': epoch,
+                            'model_ema': get_state_dict(model_ema),
+                            'scaler': loss_scaler.state_dict(),
+                            'args': args,
+                        }, checkpoint_path)     
 
         test_stats = evaluate(data_loader_val, model, device, writer, epoch)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
