@@ -189,7 +189,12 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
-    parser.add_argument('--local_rank', default=0, type=int)
+    parser.add_argument(
+        '--local_rank', '--local-rank',
+        dest='local_rank',
+        default=0,
+        type=int
+    )
 
     # my parameters
     parser.add_argument('--normalize', action='store_true')
@@ -275,7 +280,6 @@ def main(args):
     output_dir = output_dir / extra_info
     output_dir.mkdir(parents=True, exist_ok=True)
 
-
     writer = get_writer(output_dir)
 
     print(f"Creating model: {args.model}")
@@ -335,7 +339,7 @@ def main(args):
             args.teacher_model,
             pretrained=False,
             num_classes=args.nb_classes,
-            global_pool='avg',
+            #global_pool='avg',
         )
         register_forward(teacher_model, args.teacher_model)
 
@@ -358,6 +362,7 @@ def main(args):
         teacher_model.load_state_dict(new_state_dict)
         teacher_model.to(device)
         teacher_model.eval()
+
 
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
@@ -413,11 +418,7 @@ def main(args):
 
     model_without_ddp = model
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, 
-            device_ids=[args.local_rank], 
-            output_device=args.local_rank
-        )
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
@@ -545,16 +546,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     utils.init_distributed_mode(args)
-    torch.cuda.set_device(args.local_rank)
-    device = torch.device("cuda", args.local_rank)
 
     print(args)
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
-
-
-
-
-
