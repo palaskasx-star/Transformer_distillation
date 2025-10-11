@@ -364,7 +364,7 @@ def main(args):
         teacher_model.to(device)
         teacher_model.eval()
 
-
+    print(f"Local_rank:{args.local_rank}")
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
             super().__init__()
@@ -553,4 +553,5 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
