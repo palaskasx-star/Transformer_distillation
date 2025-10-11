@@ -280,6 +280,7 @@ def main(args):
     output_dir = output_dir / extra_info
     output_dir.mkdir(parents=True, exist_ok=True)
 
+
     writer = get_writer(output_dir)
 
     print(f"Creating model: {args.model}")
@@ -331,6 +332,82 @@ def main(args):
 
     model.to(device)
 
+    teacher_model = None
+    if args.distillation_type != 'none':
+        assert args.teacher_path, 'need to specify teacher-path when using distillation'
+        print(f"Creating teacher model: {args.teacher_model}")
+        teacher_model = create_model(
+            args.teacher_model,
+            pretrained=False,
+            num_classes=args.nb_classes,
+            global_pool='avg',
+        )
+        register_forward(teacher_model, args.teacher_model)
+
+        if args.teacher_path.startswith('https'):
+            checkpoint = torch.hub.load_state_dict_from_url(
+                args.teacher_path, map_location='cpu', check_hash=True)
+        else:
+            checkpoint = torch.load(args.teacher_path, map_location='cpu')
+
+        # process distributed model
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k in checkpoint['model']:
+            if k[:7] != 'module.':
+                new_state_dict = checkpoint['model']
+                break
+            new_key = k[7:]
+            new_state_dict[new_key] = checkpoint['model'][k]
+
+        teacher_model.load_state_dict(new_state_dict)
+        teacher_model.to(device)
+        teacher_model.eval()
+
+
+    class ProtoProjectorWrapper(torch.nn.Module):
+        def __init__(self, prototypes, projectors):
+            super().__init__()
+            self.prototypes = torch.nn.ParameterList(prototypes)
+            self.projectors = torch.nn.ModuleList(projectors)
+
+
+    if args.use_prototypes:
+        images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
+
+        with torch.no_grad():
+            # Teacher
+            _, features_teacher = teacher_model(images)
+            # Student
+            _, features_student = model(images)
+        prototypes = []
+        projectors_nets = []
+        for i, feat in enumerate(args.s_id):
+            feature_dim_teacher = features_teacher[i].shape[2]
+            feature_dim_student = features_student[i].shape[2]
+            # Initialize prototypes with uniform distribution
+            proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
+            _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+            proto = torch.nn.Parameter(proto)   # make it trainable
+            prototypes.append(proto)
+            # Replace random matrices with learnable linear layers (projector networks)
+            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+            projectors_nets.append(projector)
+
+        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
+        model.add_module("proto_proj_module", proto_proj_module)
+
+    else:
+        prototypes = []
+        projectors_nets = []
+        for i, feat in enumerate(args.s_id):
+            prototypes.append(None)
+            projectors_nets.append(None)
+
+        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
+        model.add_module("proto_proj_module", proto_proj_module)
+
     model_ema = None
     if args.model_ema:
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
@@ -364,75 +441,8 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    teacher_model = None
-    if args.distillation_type != 'none':
-        assert args.teacher_path, 'need to specify teacher-path when using distillation'
-        print(f"Creating teacher model: {args.teacher_model}")
-        teacher_model = create_model(
-            args.teacher_model,
-            pretrained=False,
-            num_classes=args.nb_classes,
-            global_pool='avg',
-        )
-        register_forward(teacher_model, args.teacher_model)
+    criterion = DistillationLoss(criterion, teacher_model, model.proto_proj_module.prototypes, model.proto_proj_module.projectors, args)
 
-        if args.teacher_path.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.teacher_path, map_location='cpu', check_hash=True)
-        else:
-            checkpoint = torch.load(args.teacher_path, map_location='cpu')
-
-        # process distributed model
-        from collections import OrderedDict
-        new_state_dict = OrderedDict()
-        for k in checkpoint['model']:
-            if k[:7] != 'module.':
-                new_state_dict = checkpoint['model']
-                break
-            new_key = k[7:]
-            new_state_dict[new_key] = checkpoint['model'][k]
-
-        teacher_model.load_state_dict(new_state_dict)
-        teacher_model.to(device)
-        teacher_model.eval()
-
-    if args.use_prototypes:
-        images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
-
-        with torch.no_grad():
-            # Teacher
-            _, features_teacher = teacher_model(images)
-            # Student
-            _, features_student = model(images)
-
-        prototypes = []
-        projectors_nets = []
-        for i, feat in enumerate(args.s_id):
-            feature_dim_teacher = features_teacher[i].shape[2]
-            feature_dim_student = features_student[i].shape[2]
-            # Initialize prototypes with uniform distribution
-            proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-            _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-            proto = torch.nn.Parameter(proto)   # make it trainable
-            prototypes.append(proto)
-            # Replace random matrices with learnable linear layers (projector networks)
-            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-            projectors_nets.append(projector)
-
-        for proto in prototypes:
-            optimizer.add_param_group({'params': proto})
-        for proj in projectors_nets:
-            optimizer.add_param_group({'params': proj.parameters()})
-
-        criterion = DistillationLoss(criterion, teacher_model, prototypes, projectors_nets, args)
-    else:
-        prototypes = []
-        projectors_nets = []
-        for i, feat in enumerate(args.s_id):
-            prototypes.append(None)
-            projectors_nets.append(None)
-        criterion = DistillationLoss(criterion, teacher_model, prototypes, projectors_nets, args)
 
     #output_dir = Path(args.output_dir)
     if args.resume:
@@ -533,7 +543,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Manifold KD training and evaluation script', parents=[get_args_parser()])
+    parser = argparse.ArgumentParser('Manifold KD if and evaluation script', parents=[get_args_parser()])
     args = parser.parse_args()
 
     utils.init_distributed_mode(args)
