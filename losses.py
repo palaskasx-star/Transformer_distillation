@@ -208,8 +208,9 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
     return loss_mf_patch, loss_mf_sample, loss_mf_rand
 
 def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
-    prototypes = F.normalize(prototypes, dim=-1, p=2)
-
+    #prototypes = F.normalize(prototypes, dim=-1, p=2)
+    with torch.no_grad():
+        prototypes.copy_(F.normalize(prototypes, dim=-1))
     # manifold loss among different patches (intra-sample)
     f_s = F_s
     f_t = F_t
