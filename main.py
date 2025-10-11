@@ -418,7 +418,11 @@ def main(args):
 
     model_without_ddp = model
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, 
+            device_ids=[args.local_rank], 
+            output_device=args.local_rank
+        )
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
@@ -546,12 +550,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     utils.init_distributed_mode(args)
+    torch.cuda.set_device(args.local_rank)
+    device = torch.device("cuda", args.local_rank)
 
     print(args)
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
