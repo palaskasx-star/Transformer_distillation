@@ -232,7 +232,29 @@ def init_distributed_mode(args):
     args.dist_backend = 'nccl'
     print('| distributed init (rank {}): {}'.format(
         args.rank, args.dist_url), flush=True)
-    torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                         world_size=args.world_size, rank=args.rank)
-    torch.distributed.barrier()
+    dev_id = torch.cuda.current_device()
+
+    # Newer PyTorch supports device_id; fall back gracefully if not available
+    try:
+        torch.distributed.init_process_group(
+            backend=args.dist_backend,
+            init_method=args.dist_url,
+            world_size=args.world_size,
+            rank=args.rank,
+            device_id=dev_id,  # <-- key to remove the warnings
+        )
+    except TypeError:
+        torch.distributed.init_process_group(
+            backend=args.dist_backend,
+            init_method=args.dist_url,
+            world_size=args.world_size,
+            rank=args.rank,
+        )
+
+    # Do the same for barrier (optional but silences a similar warning)
+    try:
+        torch.distributed.barrier(device_ids=[dev_id])
+    except TypeError:
+        torch.distributed.barrier()
+
     setup_for_distributed(args.rank == 0)
