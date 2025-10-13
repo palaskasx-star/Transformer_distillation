@@ -23,6 +23,9 @@ def register_forward(model, model_name):
     elif model_name.split('_')[0] == 'cait':
         model.forward_features = MethodType(cait_forward_features, model)
         model.forward = MethodType(cait_forward, model)
+    elif model_name.split('_')[0] == 'regnety':
+        model.forward_features = MethodType(regnet_forward_features, model)
+        model.forward = MethodType(regnet_forward, model)
     else:
         raise RuntimeError(f'Not defined customized method forward for model {model_name}')
 
@@ -121,3 +124,42 @@ def cait_forward(self, x, require_feat: bool = True):
         x = self.forward_features(x)
         x = self.head(x)
         return x
+
+# --------------------
+# RegNetY (from timm)
+# --------------------
+def regnet_forward_features(self, x, require_feat: bool = False):
+    """
+    Custom forward_features for timm RegNetY-160.
+    Captures intermediate outputs after each stage.
+    """
+    block_outs = []
+
+    # Stem
+    x = self.stem(x)
+    block_outs.append(torch.nn.Unfold(kernel_size=8, stride=8)(x).permute(0, 2, 1))
+
+    # Stages (typical timm RegNet has 4 stages: s1-s4)
+    x = self.s1(x); block_outs.append(torch.nn.Unfold(kernel_size=4, stride=4)(x).permute(0, 2, 1))
+    x = self.s2(x); block_outs.append(torch.nn.Unfold(kernel_size=2, stride=2)(x).permute(0, 2, 1))
+    x = self.s3(x); block_outs.append(torch.nn.Unfold(kernel_size=1, stride=1)(x).permute(0, 2, 1))
+    x = self.s4(x); block_outs.append(torch.nn.Unfold(kernel_size=1, stride=1)(torch.nn.AdaptiveAvgPool2d(14)(x)).permute(0, 2, 1))
+
+
+    # Head
+    x = self.head.global_pool(x)
+    x = self.head.flatten(x)
+    x = self.head.fc(x)
+
+    if require_feat:
+        return x, block_outs
+    else:
+        return x
+
+
+def regnet_forward(self, x, require_feat: bool = True):
+    if require_feat:
+        logits, feats = self.forward_features(x, require_feat=True)
+        return logits, feats
+    else:
+        return self.forward_features(x)
