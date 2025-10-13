@@ -124,8 +124,8 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_sample, w
 
 def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None):
     # manifold loss among different patches (intra-sample)
-    f_s = F_s
-    f_t = F_t
+    f_s = F_s.clone()
+    f_t = F_t.clone()
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
@@ -152,8 +152,8 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
     
 
     # manifold loss among different samples (inter-sample)
-    f_s = F_s.permute(1, 0, 2)
-    f_t = F_t.permute(1, 0, 2)
+    f_s = F_s.permute(1, 0, 2).clone()
+    f_t = F_t.permute(1, 0, 2).clone()
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
@@ -181,8 +181,8 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
-    f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-    f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
+    f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0).clone()
+    f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0).clone()
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
