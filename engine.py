@@ -41,8 +41,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             outputs = model(samples)
             # loss = criterion(samples, outputs, targets)
 
-            loss_base, loss_dist, loss_mf_sample, loss_mf_patch, loss_mf_rand = criterion(samples, outputs, targets)
-            loss = loss_base + loss_dist + loss_mf_sample + loss_mf_patch + loss_mf_rand
+            loss_base, loss_dist, loss_mf_cls, loss_mf_patch, loss_mf_rand = criterion(samples, outputs, targets)
+            loss = loss_base + loss_dist + loss_mf_cls + loss_mf_patch + loss_mf_rand
 
         loss_value = loss.item()
 
@@ -74,7 +74,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         metric_logger.update(loss=loss_value)
         metric_logger.update(loss_base=loss_base.item())
         metric_logger.update(loss_dist=loss_dist.item())
-        metric_logger.update(loss_mf_sample=loss_mf_sample.item())
+        metric_logger.update(loss_mf_cls=loss_mf_cls.item())
         metric_logger.update(loss_mf_patch=loss_mf_patch.item())
         metric_logger.update(loss_mf_rand=loss_mf_rand.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
@@ -85,7 +85,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     if writer is not None:
         writer.add_scalar('Train/Loss/base_loss', metric_logger.loss_base.global_avg, epoch)
         writer.add_scalar('Train/Loss/distillation_loss', metric_logger.loss_dist.global_avg, epoch)
-        writer.add_scalar('Train/Loss/mf_loss_sample', metric_logger.loss_mf_sample.global_avg, epoch)
+        writer.add_scalar('Train/Loss/mf_loss_cls', metric_logger.loss_mf_cls.global_avg, epoch)
         writer.add_scalar('Train/Loss/mf_loss_patch', metric_logger.loss_mf_patch.global_avg, epoch)
         writer.add_scalar('Train/Loss/mf_loss_rand', metric_logger.loss_mf_rand.global_avg, epoch)
 
