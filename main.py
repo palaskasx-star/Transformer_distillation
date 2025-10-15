@@ -45,9 +45,8 @@ def get_args_parser():
 
     # MD parameters
     parser.add_argument('--distillation-beta', default=1.0, type=float)
-    parser.add_argument('--w-cls', default=1.0, type=float)
-    parser.add_argument('--w-patch', default=1.0, type=float)
-    parser.add_argument('--w-rand', default=1.0, type=float)
+    parser.add_argument('--gamma', default=1.0, type=float)
+    parser.add_argument('--delta', default=1.0, type=float)
     parser.add_argument('--K', default=192, type=int)
 
     parser.add_argument('--s-id', nargs='+', type=int)
@@ -274,7 +273,7 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"normalize_{args.normalize}_distance_{args.distance}_beta_{args.distillation_beta}_wcls_{args.w_sample}_wpatch_{args.w_patch}_wrand_{args.w_rand}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
+    extra_info = f"normalize_{args.normalize}_distance_{args.distance}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
     if args.use_prototypes:
         extra_info += f"_prototypes_{args.prototypes_number}"
     output_dir = output_dir / extra_info
@@ -485,7 +484,7 @@ def main(args):
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             args.clip_grad, model_ema, mixup_fn, writer,
-            set_training_mode=args.finetune == ''  # keep in eval mode during finetuning
+            args, set_training_mode=args.finetune == ''  # keep in eval mode during finetuning
         )
         # Print the mean value for all prototype matrices
         if args.use_prototypes:
@@ -552,4 +551,5 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
