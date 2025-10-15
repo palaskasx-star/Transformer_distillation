@@ -23,7 +23,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
-                    writer=None, set_training_mode=True):
+                    writer=None, args=None, set_training_mode=True):
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -42,7 +42,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             # loss = criterion(samples, outputs, targets)
 
             loss_base, loss_dist, loss_mf_cls, loss_mf_patch, loss_mf_rand = criterion(samples, outputs, targets)
-            loss = loss_base + loss_dist + loss_mf_cls + loss_mf_patch + loss_mf_rand
+            loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.distillation_beta * ((1 - args.gamma)*(loss_mf_rand + args.delta*loss_mf_patch) + args.gamma*loss_mf_cls)
 
         loss_value = loss.item()
 
@@ -57,15 +57,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
         loss_scaler(loss, optimizer, clip_grad=max_norm,
                     parameters=model.parameters(), create_graph=is_second_order)
-        """
-        total_norm = 0.0
-        for p in model.parameters():
-            if p.grad is not None:
-                param_norm = p.grad.data.norm(2)  # L2 norm
-                total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** (1. / 2)
-        print(f"Grad Norm: {total_norm:.4f}")
-        """
+
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         if model_ema is not None:
