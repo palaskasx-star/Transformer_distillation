@@ -35,9 +35,6 @@ class DistillationLoss(nn.Module):
         self.layer_ids_t = args.t_id
         self.alpha = args.distillation_alpha
         self.beta = args.distillation_beta
-        self.w_cls = args.w_cls
-        self.w_patch = args.w_patch
-        self.w_rand = args.w_rand
         self.K = args.K
 
         self.normalize = args.normalize
@@ -85,18 +82,18 @@ class DistillationLoss(nn.Module):
         elif self.distillation_type == 'hard':
             distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
 
-        loss_base = (1 - self.alpha) * base_loss
-        loss_dist = self.alpha * distillation_loss
+        loss_base = base_loss
+        loss_dist = distillation_loss
         loss_mf_cls, loss_mf_patch, loss_mf_rand = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
-                                  self.layer_ids_t, self.K, self.w_cls, self.w_patch, self.w_rand, normalize=self.normalize, distance=self.distance,
+                                  self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance,
                                   prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size)  # manifold distillation loss
-        loss_mf_cls = self.beta * loss_mf_cls
-        loss_mf_patch = self.beta * loss_mf_patch
-        loss_mf_rand = self.beta * loss_mf_rand
+        loss_mf_cls = loss_mf_cls
+        loss_mf_patch = loss_mf_patch
+        loss_mf_rand = loss_mf_rand
         return loss_base, loss_dist, loss_mf_cls, loss_mf_patch, loss_mf_rand
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_cls, w_patch, w_rand, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1):
     losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         extra_tk_num = block_outs_s[0].shape[1] - block_outs_t[0].shape[1]
@@ -111,9 +108,9 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, w_cls, w_pa
         else:
             loss_mf_patch, loss_mf_cls, loss_mf_rand = layer_mf_loss(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx])
-        losses[0].append(w_cls * loss_mf_cls)
-        losses[1].append(w_patch * loss_mf_patch)
-        losses[2].append(w_rand * loss_mf_rand)
+        losses[0].append(loss_mf_cls)
+        losses[1].append(loss_mf_patch)
+        losses[2].append(loss_mf_rand)
 
     loss_mf_cls = sum(losses[0]) / len(losses[0])
     loss_mf_patch = sum(losses[1]) / len(losses[1])
