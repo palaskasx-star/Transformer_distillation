@@ -458,7 +458,7 @@ def main(args):
                 utils._load_checkpoint_for_ema(model_ema, checkpoint['model_ema'])
             if 'scaler' in checkpoint:
                 loss_scaler.load_state_dict(checkpoint['scaler'])
-        lr_scheduler.step(args.start_epoch)
+        lr_scheduler.step(args.start_epoch-1)
         
     if args.eval:
         test_stats = evaluate(data_loader_val, model, device)
@@ -551,6 +551,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
