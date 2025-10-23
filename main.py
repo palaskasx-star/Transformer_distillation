@@ -496,10 +496,6 @@ def main(args):
     # test_stats = evaluate(data_loader_val, teacher_model, device)
     # print(f"Accuracy of the teacher network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
     # Print the mean value for all prototype matrices
-    if args.use_prototypes:
-        for i, proto in enumerate(prototypes):
-            if proto is not None:
-                print(f"Prototype matrix {i} mean value: {proto.data.mean().item()}, std value: {proto.data.std().item()} ")
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -594,6 +590,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
