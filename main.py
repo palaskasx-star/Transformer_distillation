@@ -365,24 +365,21 @@ def main(args):
 
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
-            """
-            prototypes: list of lists of tensors or Parameters
-            projectors: list of torch.nn.Modules
-            """
             super().__init__()
-    
-            # Convert nested lists into ModuleLists of ParameterLists
+            # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
             self.prototypes = torch.nn.ModuleList()
-            for proto_group in prototypes:
-                # Wrap each tensor as Parameter (if not already)
-                params = [
-                    p if isinstance(p, torch.nn.Parameter) else torch.nn.Parameter(p)
-                    for p in proto_group
-                ]
-                self.prototypes.append(torch.nn.ParameterList(params))
-    
-            self.projectors = torch.nn.ModuleList(projectors)
+            self.projectors = torch.nn.ModuleList()
 
+            for proto_list, proj_list in zip(prototypes, projectors):
+                # Wrap each group of 3 prototypes in a submodule with ParameterList
+                proto_module = torch.nn.Module()
+                proto_module.protos = torch.nn.ParameterList(proto_list)
+                self.prototypes.append(proto_module)
+
+                # Wrap each group of 3 projectors in a submodule with ModuleList
+                proj_module = torch.nn.Module()
+                proj_module.projs = torch.nn.ModuleList(proj_list)
+                self.projectors.append(proj_module)
 
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
@@ -392,59 +389,49 @@ def main(args):
             _, features_teacher = teacher_model(images)
             # Student
             _, features_student = model(images)
+
         prototypes = []
         projectors_nets = []
+
         for i, feat in enumerate(args.s_id):
             feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
             feature_dim_student = features_student[args.s_id[i]].shape[2]
 
-            prototypes.append([])
-            projectors_nets.append([])
+            # Create 3 prototype matrices and 3 projectors for each i
+            proto_list = []
+            projector_list = []
+            for j in range(3):
+                # Initialize prototype with uniform distribution
+                proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
+                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                proto = torch.nn.Parameter(proto)
+                proto_list.append(proto)
 
-            # Initialize prototypes with uniform distribution
-            proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-            _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-            proto = torch.nn.Parameter(proto)   # make it trainable
-            prototypes[-1].append(proto)
-            # Replace random matrices with learnable linear layers (projector networks)
-            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-            projectors_nets[-1].append(projector)
+                # Initialize a projector network (Linear layer)
+                projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                projector_list.append(projector)
 
-
-
-            proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-            _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-            proto = torch.nn.Parameter(proto)   # make it trainable
-            prototypes[-1].append(proto)
-            # Replace random matrices with learnable linear layers (projector networks)
-            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-            projectors_nets[-1].append(projector)
-
-
-            proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-            _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-            proto = torch.nn.Parameter(proto)   # make it trainable
-            prototypes[-1].append(proto)
-            # Replace random matrices with learnable linear layers (projector networks)
-            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-            projectors_nets[-1].append(projector)
-
+            prototypes.append(proto_list)
+            projectors_nets.append(projector_list)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
-
     else:
         prototypes = []
         projectors_nets = []
         for i, feat in enumerate(args.s_id):
-            prototypes.append(None)
-            projectors_nets.append(None)
+            proto_list = []
+            projector_list = []
+            for j in range(3):
+                proto_list.append(None)
+                projector_list.append(None)
+            prototypes.append(proto_list)
+            projectors_nets.append(projector_list)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
+
 
 
     model_ema = None
@@ -607,6 +594,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
