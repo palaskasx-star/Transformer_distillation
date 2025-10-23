@@ -510,13 +510,6 @@ def main(args):
             args.clip_grad, model_ema, mixup_fn, writer,
             args, set_training_mode=args.finetune == ''  # keep in eval mode during finetuning
         )
-        # Print the mean value for all prototype matrices
-        if args.use_prototypes:
-            for i, proto in enumerate(prototypes):
-                if proto is not None:
-                    print(f"Prototype matrix {i} mean value: {proto.data.mean().item()}, std value: {proto.data.std().item()} ")
-                    # Save histogram to TensorBoard
-                    writer.add_histogram(f'prototypes/layer_{i}', proto.data, epoch)
 
         lr_scheduler.step(epoch)
         if args.output_dir:
@@ -590,6 +583,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
