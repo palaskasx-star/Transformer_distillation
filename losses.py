@@ -209,23 +209,24 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     prototypes = F.normalize(prototypes, dim=-1, p=2)
     """
     with torch.no_grad():
-        prototypes.copy_(F.normalize(prototypes, dim=1))
+        for i in range(prototypes):
+            prototypes[i].copy_(F.normalize(prototypes[i], dim=1))
     # manifold loss among different patches (intra-sample)
-    f_s = F_s.clone()
-    f_t = F_t.clone()
+    f_s = F_s
+    f_t = F_t
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net(f_s)
+    f_s = projectors_net[0](f_s)
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    M_s = f_s @ prototypes.t()
+    M_s = f_s @ prototypes[0].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
-    M_t = f_t @ prototypes.t()
+    M_t = f_t @ prototypes[0].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
 
@@ -245,15 +246,15 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net(f_s)
+    f_s = projectors_net[1](f_s)
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
     
-    M_s = f_s @ prototypes.t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
-    M_t = f_t @ prototypes.t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    M_s = f_s @ prototypes[1].t()
+    q1 = sinkhorn(M_s, nmb_iters=3).detach()
+    M_t = f_t @ prototypes[1].t()
+    q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
@@ -275,14 +276,14 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net(f_s)
+    f_s = projectors_net[2](f_s)
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
-    
-    M_s = f_s @ prototypes.t()
+
+    M_s = f_s @ prototypes[2].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
-    M_t = f_t @ prototypes.t()
+    M_t = f_t @ prototypes[2].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
