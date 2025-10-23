@@ -102,7 +102,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
         if max_patch_num > 0:
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
-        if prototypes[0] is not None:
+        if prototypes[idx].protos[0] is not None:
             loss_mf_patch, loss_mf_cls, loss_mf_rand = layer_mf_loss_prototypes(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
         else:
@@ -209,8 +209,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     prototypes = F.normalize(prototypes, dim=-1, p=2)
     """
     with torch.no_grad():
-        for i in range(prototypes):
-            prototypes[i].copy_(F.normalize(prototypes[i], dim=1))
+        for i in range(len(prototypes.protos)):
+            prototypes.protos[i].copy_(F.normalize(prototypes.protos[i], dim=1))
     # manifold loss among different patches (intra-sample)
     f_s = F_s
     f_t = F_t
@@ -219,14 +219,15 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net[0](f_s)
+    # apply the first projector from the ModuleList
+    f_s = projectors_net.projs[0](f_s)
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    M_s = f_s @ prototypes[0].t()
+    M_s = f_s @ prototypes.protos[0].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
-    M_t = f_t @ prototypes[0].t()
+    M_t = f_t @ prototypes.protos[0].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
 
@@ -246,14 +247,14 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net[1](f_s)
+    f_s = projectors_net.projs[1](f_s)
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
     
-    M_s = f_s @ prototypes[1].t()
+    M_s = f_s @ prototypes.protos[1].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
-    M_t = f_t @ prototypes[1].t()
+    M_t = f_t @ prototypes.protos[1].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
@@ -276,14 +277,14 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net[2](f_s)
+    f_s = projectors_net.projs[2](f_s)
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    M_s = f_s @ prototypes[2].t()
+    M_s = f_s @ prototypes.protos[2].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
-    M_t = f_t @ prototypes[2].t()
+    M_t = f_t @ prototypes.protos[2].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
@@ -295,6 +296,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     loss_mf_rand = (loss12 + loss21)/2
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand
+
 
 
 def merge(x, max_patch_num=196):
