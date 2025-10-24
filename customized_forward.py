@@ -44,7 +44,10 @@ def vit_forward_features(self, x, require_feat: bool = False):
     block_outs = []
     for i, blk in enumerate(self.blocks):
         x = blk(x)
-        block_outs.append(x)
+        if self.dist_token is None:
+            block_outs.append(x)
+        else:
+            block_outs.append(x[:, 1:])
 
     x = self.norm(x)
     if require_feat:
