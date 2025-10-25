@@ -369,19 +369,19 @@ def main(args):
             self.prototypes = torch.nn.ParameterList(prototypes)
             self.projectors = torch.nn.ModuleList(projectors)
 
-    class ProjectorHead(nn.Module):
+    class ProjectorHead(torch.nn.Module):
         """SwAV/DINO-style projector head"""
         def __init__(self, in_dim, hidden_dim=2048, out_dim=None, num_layers=2):
             super().__init__()
             layers = []
             for i in range(num_layers - 1):
-                layers.append(nn.Linear(in_dim if i == 0 else hidden_dim, hidden_dim))
-                layers.append(nn.BatchNorm1d(hidden_dim))
-                layers.append(nn.ReLU(inplace=True))
+                layers.append(torch.nn.Linear(in_dim if i == 0 else hidden_dim, hidden_dim))
+                layers.append(torch.nn.BatchNorm1d(hidden_dim))
+                layers.append(torch.nn.ReLU(inplace=True))
             if out_dim is None:
                 out_dim = hidden_dim
-            layers.append(nn.Linear(hidden_dim, out_dim, bias=False))
-            self.projector = nn.Sequential(*layers)
+            layers.append(torch.nn.Linear(hidden_dim, out_dim, bias=False))
+            self.projector = torch.nn.Sequential(*layers)
     
         def forward(self, x):
             return self.projector(x)
@@ -589,6 +589,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
