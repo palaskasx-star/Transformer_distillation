@@ -376,8 +376,7 @@ def main(args):
             layers = []
             for i in range(num_layers - 1):
                 layers.append(torch.nn.Linear(in_dim if i == 0 else hidden_dim, hidden_dim))
-                layers.append(torch.nn.BatchNorm1d(hidden_dim))
-                layers.append(torch.nn.GELU(inplace=True))
+                layers.append(torch.nn.GELU())
             if out_dim is None:
                 out_dim = hidden_dim
             layers.append(torch.nn.Linear(hidden_dim, out_dim, bias=False))
@@ -589,6 +588,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
