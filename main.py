@@ -366,20 +366,9 @@ def main(args):
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
             super().__init__()
-            # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
-            self.prototypes = torch.nn.ModuleList()
-            self.projectors = torch.nn.ModuleList()
+            self.prototypes = torch.nn.ParameterList(prototypes)
+            self.projectors = torch.nn.ModuleList(projectors)
 
-            for proto_list, proj_list in zip(prototypes, projectors):
-                # Wrap each group of 3 prototypes in a submodule with ParameterList
-                proto_module = torch.nn.Module()
-                proto_module.protos = torch.nn.ParameterList(proto_list)
-                self.prototypes.append(proto_module)
-
-                # Wrap each group of 3 projectors in a submodule with ModuleList
-                proj_module = torch.nn.Module()
-                proj_module.projs = torch.nn.ModuleList(proj_list)
-                self.projectors.append(proj_module)
 
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
@@ -389,7 +378,6 @@ def main(args):
             _, features_teacher = teacher_model(images)
             # Student
             _, features_student = model(images)
-
         prototypes = []
         projectors_nets = []
 
@@ -397,42 +385,28 @@ def main(args):
             feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
             feature_dim_student = features_student[args.s_id[i]].shape[2]
 
-            # Create 3 prototype matrices and 3 projectors for each i
-            proto_list = []
-            projector_list = []
-            for j in range(3):
-                # Initialize prototype with uniform distribution
-                proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                proto = torch.nn.Parameter(proto)
-                proto_list.append(proto)
-
-                # Initialize a projector network (Linear layer)
-                projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                projector_list.append(projector)
-
-            prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
+            # Initialize prototypes with uniform distribution
+            proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
+            _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+            proto = torch.nn.Parameter(proto)   # make it trainable
+            prototypes.append(proto)
+            # Replace random matrices with learnable linear layers (projector networks)
+            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+            projectors_nets.append(projector)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
+
     else:
         prototypes = []
         projectors_nets = []
         for i, feat in enumerate(args.s_id):
-            proto_list = []
-            projector_list = []
-            for j in range(3):
-                proto_list.append(None)
-                projector_list.append(None)
-            prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
+            prototypes.append(None)
+            projectors_nets.append(None)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
-
-
 
     model_ema = None
     if args.model_ema:
@@ -496,6 +470,10 @@ def main(args):
     # test_stats = evaluate(data_loader_val, teacher_model, device)
     # print(f"Accuracy of the teacher network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
     # Print the mean value for all prototype matrices
+    if args.use_prototypes:
+        for i, proto in enumerate(prototypes):
+            if proto is not None:
+                print(f"Prototype matrix {i} mean value: {proto.data.mean().item()}, std value: {proto.data.std().item()} ")
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -510,6 +488,13 @@ def main(args):
             args.clip_grad, model_ema, mixup_fn, writer,
             args, set_training_mode=args.finetune == ''  # keep in eval mode during finetuning
         )
+        # Print the mean value for all prototype matrices
+        if args.use_prototypes:
+            for i, proto in enumerate(prototypes):
+                if proto is not None:
+                    print(f"Prototype matrix {i} mean value: {proto.data.mean().item()}, std value: {proto.data.std().item()} ")
+                    # Save histogram to TensorBoard
+                    writer.add_histogram(f'prototypes/layer_{i}', proto.data, epoch)
 
         lr_scheduler.step(epoch)
         if args.output_dir:
@@ -583,11 +568,6 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
-
-
-
-
-
 
 
 
