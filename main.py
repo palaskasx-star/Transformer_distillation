@@ -380,9 +380,11 @@ def main(args):
             _, features_student = model(images)
         prototypes = []
         projectors_nets = []
+
         for i, feat in enumerate(args.s_id):
-            feature_dim_teacher = features_teacher[i].shape[2]
-            feature_dim_student = features_student[i].shape[2]
+            feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
+            feature_dim_student = features_student[args.s_id[i]].shape[2]
+
             # Initialize prototypes with uniform distribution
             proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
             _sqrt_k = (1. / feature_dim_teacher) ** 0.5
@@ -566,6 +568,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
