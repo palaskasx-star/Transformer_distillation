@@ -409,9 +409,9 @@ def main(args):
             # Replace random matrices with learnable linear layers (projector networks)
             projector = ProjectorHead(
                 in_dim=feature_dim_student,
-                hidden_dim=1024,
+                hidden_dim=2048,
                 out_dim=feature_dim_teacher,
-                num_layers=3   # 2 or 3 works well
+                num_layers=2   # 2 or 3 works well
             ).to(device)
             projectors_nets.append(projector)
 
@@ -588,6 +588,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
