@@ -273,7 +273,7 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"normalize_{args.normalize}_distance_{args.distance}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
+    extra_info = f"normalize_{args.normalize}_distance_{args.distance}_alpha{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
     if args.use_prototypes:
         extra_info += f"_prototypes_{args.prototypes_number}"
     output_dir = output_dir / extra_info
@@ -369,21 +369,6 @@ def main(args):
             self.prototypes = torch.nn.ParameterList(prototypes)
             self.projectors = torch.nn.ModuleList(projectors)
 
-    class ProjectorHead(torch.nn.Module):
-        """SwAV/DINO-style projector head"""
-        def __init__(self, in_dim, hidden_dim=2048, out_dim=None, num_layers=2):
-            super().__init__()
-            layers = []
-            for i in range(num_layers - 1):
-                layers.append(torch.nn.Linear(in_dim if i == 0 else hidden_dim, hidden_dim))
-                layers.append(torch.nn.GELU())
-            if out_dim is None:
-                out_dim = hidden_dim
-            layers.append(torch.nn.Linear(hidden_dim, out_dim, bias=False))
-            self.projector = torch.nn.Sequential(*layers)
-    
-        def forward(self, x):
-            return self.projector(x)
 
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
@@ -407,12 +392,7 @@ def main(args):
             proto = torch.nn.Parameter(proto)   # make it trainable
             prototypes.append(proto)
             # Replace random matrices with learnable linear layers (projector networks)
-            projector = ProjectorHead(
-                in_dim=feature_dim_student,
-                hidden_dim=2048,
-                out_dim=feature_dim_teacher,
-                num_layers=2   # 2 or 3 works well
-            ).to(device)
+            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
             projectors_nets.append(projector)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
@@ -588,19 +568,3 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
