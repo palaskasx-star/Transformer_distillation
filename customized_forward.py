@@ -68,26 +68,26 @@ def vit_forward(self, x, require_feat: bool = True):
         x = outs[0]
         block_outs = outs[-1]
         if self.head_dist is not None:
-            x, x_dist = self.head(x[0]), self.head_dist(x[1])  # x must be a tuple
+            x, x_dist = self.head(x[0].detach()), self.head_dist(x[1].detach())  # x must be a tuple
             if self.training and not torch.jit.is_scripting():
                 # during inference, return the average of both classifier predictions
                 return (x, x_dist), block_outs
             else:
                 return (x + x_dist) / 2, block_outs
         else:
-            x = self.head(x)
+            x = self.head(x.detach())
         return x, block_outs
     else:
         x = self.forward_features(x)
         if self.head_dist is not None:
-            x, x_dist = self.head(x[0]), self.head_dist(x[1])  # x must be a tuple
+            x, x_dist = self.head(x[0].detach()), self.head_dist(x[1].detach())  # x must be a tuple
             if self.training and not torch.jit.is_scripting():
                 # during inference, return the average of both classifier predictions
                 return x, x_dist
             else:
                 return (x + x_dist) / 2
         else:
-            x = self.head(x)
+            x = self.head(x.detach())
         return x
 
 
@@ -166,6 +166,7 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
 
 
 
