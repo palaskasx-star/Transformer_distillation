@@ -451,6 +451,19 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
+        ####################################
+        checkpoint_model = checkpoint['model']
+        new_state_dict = {}
+        for k, v in checkpoint_model.items():
+            if k.startswith('module.'):
+                # Strip the 'module.' prefix (7 characters: m-o-d-u-l-e-.)
+                new_state_dict[k[7:]] = v 
+            else:
+                new_state_dict[k] = v
+        
+        # Replace the original (DDP-prefixed) state dict with the cleaned one
+        model_state_dict_to_load = new_state_dict
+        ####################################
         model_without_ddp.load_state_dict(checkpoint['model'])
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
@@ -568,3 +581,4 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
