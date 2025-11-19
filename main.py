@@ -483,7 +483,6 @@ def main(args):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
             
-        test_stats = evaluate(data_loader_val, model, device, criterion, writer, epoch)
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
@@ -525,7 +524,7 @@ def main(args):
                         'args': args,
                     }, checkpoint_path)     
 
-        
+        test_stats = evaluate(data_loader_val, model, device, criterion, writer, epoch)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         
         if max_accuracy < test_stats["acc1"]:
@@ -570,5 +569,6 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
