@@ -85,7 +85,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, writer=None, epoch=0):
+def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, writer=None, epoch=0):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -100,12 +100,20 @@ def evaluate(data_loader, model, device, writer=None, epoch=0):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(images, require_feat=False)
-            loss = criterion(output, target)
+            output = model(images, require_feat=True)
+            loss = criterion(output[0], target)
+            target_onehot = torch.zeros_like(output[0]).scatter_(1, target.unsqueeze(1), 1)
+            loss_base, loss_dist, loss_mf_cls, loss_mf_patch, loss_mf_rand = criterion_dist(images, output, target_onehot)
 
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc1, acc5 = accuracy(output[0], target, topk=(1, 5))
 
         batch_size = images.shape[0]
+        metric_logger.update(loss=loss.item())
+        metric_logger.update(loss_base=loss_base.item())
+        metric_logger.update(loss_dist=loss_dist.item())
+        metric_logger.update(loss_mf_cls=loss_mf_cls.item())
+        metric_logger.update(loss_mf_patch=loss_mf_patch.item())
+        metric_logger.update(loss_mf_rand=loss_mf_rand.item())
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
@@ -117,5 +125,10 @@ def evaluate(data_loader, model, device, writer=None, epoch=0):
         writer.add_scalar('Test/Acc@1', metric_logger.acc1.global_avg, epoch)
         writer.add_scalar('Test/Acc@5', metric_logger.acc5.global_avg, epoch)
         writer.add_scalar('Test/Loss', metric_logger.loss.global_avg, epoch)
+        writer.add_scalar('Test/Loss/base_loss', metric_logger.loss_base.global_avg, epoch)
+        writer.add_scalar('Test/Loss/distillation_loss', metric_logger.loss_dist.global_avg, epoch)
+        writer.add_scalar('Test/Loss/mf_loss_cls', metric_logger.loss_mf_cls.global_avg, epoch)
+        writer.add_scalar('Test/Loss/mf_loss_patch', metric_logger.loss_mf_patch.global_avg, epoch)
+        writer.add_scalar('Test/Loss/mf_loss_rand', metric_logger.loss_mf_rand.global_avg, epoch)  
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
