@@ -45,8 +45,8 @@ class DistillationLoss(nn.Module):
 
         self.world_size = args.world_size
 
-        self.KoLeoData = KoLeoData()
-        self.KoLeoPrototypes = KoLeoPrototypes()
+        self.KoLeoData = KoLeoLossData()
+        self.KoLeoPrototypes = KoLeoLossPrototypes()
 
     def forward(self, inputs, outputs, labels):
         """
@@ -89,12 +89,12 @@ class DistillationLoss(nn.Module):
         loss_dist = distillation_loss
         loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
                                   self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance,
-                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size)  # manifold distillation loss
+                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size)  # manifold distillation loss
 
         return loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, KoLeoData=None, KoLeoPrototypes=None, world_size=1):
     losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_data = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_proto = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
@@ -108,7 +108,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
             F_t = merge(F_t, max_patch_num)
         if prototypes[idx].protos[0] is not None:
             loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = layer_mf_loss_prototypes(
-                F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
+                F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
         else:
             loss_mf_patch, loss_mf_cls, loss_mf_rand = layer_mf_loss(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx])
@@ -224,7 +224,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand
 
-def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     """
     prototypes = F.normalize(prototypes, dim=-1, p=2)
     """
@@ -246,8 +246,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    loss_KoLeo_patch_data = self.KoLeoData(f_s)
-    loss_KoLeo_patch_proto = self.KoLeoPrototypes( prototypes.protos[0])
+    loss_KoLeo_patch_data = KoLeoData(f_s)
+    loss_KoLeo_patch_proto = KoLeoPrototypes( prototypes.protos[0])
 
     M_s = f_s @ prototypes.protos[0].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
@@ -276,8 +276,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    loss_KoLeo_cls_data = self.KoLeoData(f_s)
-    loss_KoLeo_cls_proto = self.KoLeoPrototypes( prototypes.protos[1])
+    loss_KoLeo_cls_data = KoLeoData(f_s)
+    loss_KoLeo_cls_proto = KoLeoPrototypes( prototypes.protos[1])
     
     M_s = f_s @ prototypes.protos[1].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
@@ -309,8 +309,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    loss_KoLeo_rand_data = self.KoLeoData(f_s)
-    loss_KoLeo_rand_proto = self.KoLeoPrototypes( prototypes.protos[2])
+    loss_KoLeo_rand_data = KoLeoData(f_s)
+    loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
     M_s = f_s @ prototypes.protos[2].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
@@ -401,7 +401,6 @@ class KoLeoLossData(nn.Module):
         dots = torch.bmm(x, x.transpose(1, 2))
         dots.diagonal(dim1=-2, dim2=-1).fill_(-1)
         _, I = torch.max(dots, dim=2)
-        print(I)
 
         return I
 
@@ -425,11 +424,10 @@ class KoLeoLossData(nn.Module):
             flat_neighbors = neighbors.view(-1, feat_dim)
             
             distances = self.pdist(flat_student, flat_neighbors)
-            print(distances)
 
             loss = -torch.log(distances + eps).mean()
         
-        return loss, distances, student_output
+        return loss
 
 class KoLeoLossPrototypes(nn.Module):
     """Kozachenko-Leonenko entropic loss regularizer from Sablayrolles et al. - 2018 - Spreading vectors for similarity search"""
