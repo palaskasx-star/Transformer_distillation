@@ -106,7 +106,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
         if prototypes[idx].protos[0] is not None:
-            loss_mf_patch, loss_mf_cls, loss_mf_rand = layer_mf_loss_prototypes(
+            loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = layer_mf_loss_prototypes(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
         else:
             loss_mf_patch, loss_mf_cls, loss_mf_rand = layer_mf_loss(
@@ -119,7 +119,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
     loss_mf_patch = sum(losses[1]) / len(losses[1])
     loss_mf_rand = sum(losses[2]) / len(losses[2])
 
-    return loss_mf_cls, loss_mf_patch, loss_mf_rand
+    return loss_mf_cls, loss_mf_patch, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
 def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None):
@@ -308,7 +308,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     loss_mf_rand = (loss12 + loss21)/2
 
-    return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, , loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
+    return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
 
