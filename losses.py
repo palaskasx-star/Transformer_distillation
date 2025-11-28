@@ -98,6 +98,9 @@ class DistillationLoss(nn.Module):
 
 def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1):
     losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
+    losses_KoLeo_data = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
+    losses_KoLeo_proto = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
+
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         extra_tk_num = block_outs_s[0].shape[1] - block_outs_t[0].shape[1]
         F_s = block_outs_s[id_s][:, extra_tk_num:, :]  # remove additional tokens
@@ -114,10 +117,26 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
         losses[0].append(loss_mf_cls)
         losses[1].append(loss_mf_patch)
         losses[2].append(loss_mf_rand)
+        
+        losses_KoLeo_data[0].append(loss_KoLeo_cls_data)
+        losses_KoLeo_data[1].append(loss_KoLeo_patch_data)
+        losses_KoLeo_data[2].append(loss_KoLeo_rand_data)
 
+        losses_KoLeo_proto[0].append(loss_KoLeo_cls_proto)
+        losses_KoLeo_proto[1].append(loss_KoLeo_patch_proto)
+        losses_KoLeo_proto[2].append(loss_KoLeo_rand_proto)
+        
     loss_mf_cls = sum(losses[0]) / len(losses[0])
     loss_mf_patch = sum(losses[1]) / len(losses[1])
     loss_mf_rand = sum(losses[2]) / len(losses[2])
+    
+    loss_KoLeo_cls_data = sum(losses_KoLeo_data[0]) / len(losses_KoLeo_data[0])
+    loss_KoLeo_patch_data = sum(losses_KoLeo_data[1]) / len(losses_KoLeo_data[1])
+    loss_KoLeo_rand_data = sum(losses_KoLeo_data[2]) / len(losses_KoLeo_data[2])
+
+    loss_KoLeo_cls_proto = sum(losses_KoLeo_proto[0]) / len(losses_KoLeo_proto[0])
+    loss_KoLeo_patch_proto = sum(losses_KoLeo_proto[1]) / len(losses_KoLeo_proto[1])
+    loss_KoLeo_rand_proto = sum(losses_KoLeo_proto[2]) / len(losses_KoLeo_proto[2])
 
     return loss_mf_cls, loss_mf_patch, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
