@@ -203,8 +203,8 @@ def get_args_parser():
     parser.add_argument('--use-prototypes', action='store_true')
     parser.add_argument('--prototypes-number', default=256, type=int)
 
-     parser.add_argument('--KoLeoData', default=0.1, type=float)
-     parser.add_argument('--KoLeoPrototypes', default=0.1, type=float)
+    parser.add_argument('--KoLeoData', default=0.1, type=float)
+    parser.add_argument('--KoLeoPrototypes', default=0.1, type=float)
 
     return parser
 
@@ -586,6 +586,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
