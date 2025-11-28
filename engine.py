@@ -40,10 +40,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             # loss = criterion(samples, outputs, targets)
-
-            loss_base, loss_dist, loss_mf_cls, loss_mf_patch, loss_mf_rand = criterion(samples, outputs, targets)
-            loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.distillation_beta*loss_mf_cls + args.gamma*loss_mf_patch +  args.delta*loss_mf_rand
-
+            loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = criterion(samples, outputs, targets)
+            loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.distillation_beta*(loss_mf_cls + args.KoLeoData*loss_KoLeo_cls_data + args.KoLeoPrototypes*loss_KoLeo_cls_proto) + args.gamma*(loss_mf_patch + args.KoLeoData*loss_KoLeo_patch_data + args.KoLeoPrototypes*loss_KoLeo_patch_proto)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
+      
         loss_value = loss.item()
 
         if not math.isfinite(loss_value):
