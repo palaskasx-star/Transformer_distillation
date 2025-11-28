@@ -45,6 +45,9 @@ class DistillationLoss(nn.Module):
 
         self.world_size = args.world_size
 
+        self.KoLeoData() = args.KoLeoData
+        self.KoLeoPrototypes() = args.KoLeoPrototypes
+
     def forward(self, inputs, outputs, labels):
         """
         Args:
@@ -211,6 +214,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     with torch.no_grad():
         for i in range(len(prototypes.protos)):
             prototypes.protos[i].copy_(F.normalize(prototypes.protos[i], dim=1))
+            
     # manifold loss among different patches (intra-sample)
     f_s = F_s
     f_t = F_t
@@ -224,6 +228,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
+
+    loss_KoLeo_patch_data = self.KoLeoData(f_s)
+    loss_KoLeo_patch_proto = self.KoLeoPrototypes( prototypes.protos[0])
 
     M_s = f_s @ prototypes.protos[0].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
@@ -251,6 +258,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
+
+    loss_KoLeo_cls_data = self.KoLeoData(f_s)
+    loss_KoLeo_cls_proto = self.KoLeoPrototypes( prototypes.protos[1])
     
     M_s = f_s @ prototypes.protos[1].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
@@ -282,6 +292,9 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
+    loss_KoLeo_rand_data = self.KoLeoData(f_s)
+    loss_KoLeo_rand_proto = self.KoLeoPrototypes( prototypes.protos[2])
+
     M_s = f_s @ prototypes.protos[2].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.protos[2].t()
@@ -295,7 +308,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     loss_mf_rand = (loss12 + loss21)/2
 
-    return loss_mf_patch, loss_mf_cls, loss_mf_rand
+    return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, , loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
 
@@ -359,3 +372,75 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
 
     Q *= B # the colomns must sum to 1 so that Q is an assignment
     return Q.permute(0, 2, 1)
+
+
+class KoLeoLossData(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pdist = nn.PairwiseDistance(2, eps=1e-8)
+
+    def pairwise_NNs_inner(self, x):
+        # x is (B, T, feat_dim)
+        dots = torch.bmm(x, x.transpose(1, 2))
+        dots.diagonal(dim1=-2, dim2=-1).fill_(-1)
+        _, I = torch.max(dots, dim=2)
+        print(I)
+
+        return I
+
+    def forward(self, student_output, eps=1e-8):
+        # Fix 1: Updated autocast syntax to remove warning
+        with torch.amp.autocast('cuda', enabled=False):
+            
+            # 2. Find nearest neighbors
+            I = self.pairwise_NNs_inner(student_output)
+
+            # 3. Gather neighbors
+            # Fix 2: Changed variable name 'F' to 'feat_dim' to avoid collision with functional F
+            B, T, feat_dim = student_output.shape
+            
+            batch_indices = torch.arange(B, device=student_output.device).view(-1, 1).expand(-1, T)
+            neighbors = student_output[batch_indices, I]
+
+
+            # 4. Flatten and calculate distance
+            flat_student = student_output.view(-1, feat_dim)
+            flat_neighbors = neighbors.view(-1, feat_dim)
+            
+            distances = self.pdist(flat_student, flat_neighbors)
+            print(distances)
+
+            loss = -torch.log(distances + eps).mean()
+        
+        return loss, distances, student_output
+
+class KoLeoLossPrototypes(nn.Module):
+    """Kozachenko-Leonenko entropic loss regularizer from Sablayrolles et al. - 2018 - Spreading vectors for similarity search"""
+
+    def __init__(self):
+        super().__init__()
+        self.pdist = nn.PairwiseDistance(2, eps=1e-8)
+
+    def pairwise_NNs_inner(self, x):
+        """
+        Pairwise nearest neighbors for L2-normalized vectors.
+        Uses Torch rather than Faiss to remain on GPU.
+        """
+        # parwise dot products (= inverse distance)
+        dots = torch.mm(x, x.t())
+        n = x.shape[0]
+        dots.view(-1)[:: (n + 1)].fill_(-1)  # Trick to fill diagonal with -1
+        # max inner prod -> min distance
+        _, I = torch.max(dots, dim=1)  # noqa: E741
+        return I
+
+    def forward(self, student_output, eps=1e-8):
+        """
+        Args:
+            student_output (BxD): backbone output of student
+        """
+        with torch.cuda.amp.autocast(enabled=False):
+            I = self.pairwise_NNs_inner(student_output)  # noqa: E741
+            distances = self.pdist(student_output, student_output[I])  # BxD, BxD -> B
+            loss = -torch.log(distances + eps).mean()
+        return loss
