@@ -45,8 +45,8 @@ class DistillationLoss(nn.Module):
 
         self.world_size = args.world_size
 
-        self.KoLeoData() = args.KoLeoData
-        self.KoLeoPrototypes() = args.KoLeoPrototypes
+        self.KoLeoData = KoLeoData()
+        self.KoLeoPrototypes = KoLeoPrototypes()
 
     def forward(self, inputs, outputs, labels):
         """
