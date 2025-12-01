@@ -69,6 +69,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         metric_logger.update(loss_mf_patch=loss_mf_patch.item())
         metric_logger.update(loss_mf_rand=loss_mf_rand.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+
+        metric_logger.update(loss_KoLeo_patch_data=loss_KoLeo_patch_data.item())
+        metric_logger.update(loss_KoLeo_cls_data=loss_KoLeo_cls_data.item())
+        metric_logger.update(loss_KoLeo_rand_data=loss_KoLeo_rand_data.item())
+        metric_logger.update(loss_KoLeo_patch_proto=loss_KoLeo_patch_proto.item())
+        metric_logger.update(loss_KoLeo_cls_proto=loss_KoLeo_cls_proto.item())
+        metric_logger.update(loss_KoLeo_rand_proto=loss_KoLeo_rand_proto.item())
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -123,6 +130,13 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+
+        metric_logger.update(loss_KoLeo_patch_data=loss_KoLeo_patch_data.item())
+        metric_logger.update(loss_KoLeo_cls_data=loss_KoLeo_cls_data.item())
+        metric_logger.update(loss_KoLeo_rand_data=loss_KoLeo_rand_data.item())
+        metric_logger.update(loss_KoLeo_patch_proto=loss_KoLeo_patch_proto.item())
+        metric_logger.update(loss_KoLeo_cls_proto=loss_KoLeo_cls_proto.item())
+        metric_logger.update(loss_KoLeo_rand_proto=loss_KoLeo_rand_proto.item())
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
