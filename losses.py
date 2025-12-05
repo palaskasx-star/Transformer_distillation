@@ -238,8 +238,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     loss_mf_patch = (loss12 + loss21)/2
 
     # cls token loss
-    f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
-    f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
+    f_s = F_s.permute(1, 0, 2).clone()  # select only the cls token
+    f_t = F_t.permute(1, 0, 2).clone()  # select only the cls token
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
