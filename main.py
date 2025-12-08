@@ -45,8 +45,9 @@ def get_args_parser():
 
     # MD parameters
     parser.add_argument('--distillation-beta', default=1.0, type=float)
-    parser.add_argument('--gamma', default=1.0, type=float)
-    parser.add_argument('--delta', default=1.0, type=float)
+    parser.add_argument('--w-sample', default=1.0, type=float)
+    parser.add_argument('--w-patch', default=1.0, type=float)
+    parser.add_argument('--w-rand', default=1.0, type=float)
     parser.add_argument('--K', default=192, type=int)
 
     parser.add_argument('--s-id', nargs='+', type=int)
@@ -273,7 +274,7 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
+    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_intra_{args.w_patch}_inter_{args.w_sample}_random_{args.w_rand}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
     if args.use_prototypes:
         extra_info += f"_prototypes_{args.prototypes_number}"
     output_dir = output_dir / extra_info
@@ -569,6 +570,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
