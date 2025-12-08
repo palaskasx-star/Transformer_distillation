@@ -127,7 +127,7 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
         writer.add_scalar('Test/Loss', metric_logger.loss.global_avg, epoch)
         writer.add_scalar('Test/Loss/base_loss', metric_logger.loss_base.global_avg, epoch)
         writer.add_scalar('Test/Loss/distillation_loss', metric_logger.loss_dist.global_avg, epoch)
-        writer.add_scalar('Test/Loss/mf_loss_cls', metric_logger.loss_mf_cls.global_avg, epoch)
+        writer.add_scalar('Test/Loss/mf_loss_sample', metric_logger.loss_mf_cls.global_avg, epoch)
         writer.add_scalar('Test/Loss/mf_loss_patch', metric_logger.loss_mf_patch.global_avg, epoch)
         writer.add_scalar('Test/Loss/mf_loss_rand', metric_logger.loss_mf_rand.global_avg, epoch)  
 
