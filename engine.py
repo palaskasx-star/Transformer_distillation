@@ -77,7 +77,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     if writer is not None:
         writer.add_scalar('Train/Loss/base_loss', metric_logger.loss_base.global_avg, epoch)
         writer.add_scalar('Train/Loss/distillation_loss', metric_logger.loss_dist.global_avg, epoch)
-        writer.add_scalar('Train/Loss/mf_loss_cls', metric_logger.loss_mf_cls.global_avg, epoch)
+        writer.add_scalar('Train/Loss/mf_loss_sample', metric_logger.loss_mf_cls.global_avg, epoch)
         writer.add_scalar('Train/Loss/mf_loss_patch', metric_logger.loss_mf_patch.global_avg, epoch)
         writer.add_scalar('Train/Loss/mf_loss_rand', metric_logger.loss_mf_rand.global_avg, epoch)
 
