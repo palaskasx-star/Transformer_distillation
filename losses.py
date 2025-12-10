@@ -223,25 +223,18 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    M_s = f_s @ prototypes.t()
-    q1 = sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.t()
-    q2 = sinkhorn(M_t, nmb_iters=3).detach()
-
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
 
     if distance == 'MSE':
-        M_diff1 = q1 - p2
         M_diff2 = q2 - p1
-        loss12 = (M_diff1 * M_diff1).mean()
         loss21 = (M_diff2 * M_diff2).mean()
     elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
-
-    loss_mf_patch = (loss12 + loss21)/2
+        
+    loss_mf_patch = loss21
 
     # cls token loss
     f_s = F_s.permute(1, 0, 2).clone()  # select only the cls token
@@ -256,24 +249,18 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
     
-    M_s = f_s @ prototypes.t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.t()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
 
     if distance == 'MSE':
-        M_diff1 = q1 - p2
         M_diff2 = q2 - p1
-        loss12 = (M_diff1 * M_diff1).mean()
         loss21 = (M_diff2 * M_diff2).mean()
     elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_cls = (loss12 + loss21)/2
+    loss_mf_cls = loss21
 
     # manifold loss among random sampled patches
     bsz, patch_num, _ = F_s.shape
@@ -281,7 +268,6 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
@@ -292,24 +278,18 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
     
-    M_s = f_s @ prototypes.t()
-    q1 = sinkhorn(M_s, nmb_iters=3).detach()
     M_t = f_t @ prototypes.t()
-    q2 = sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
-    
+
     if distance == 'MSE':
-        M_diff1 = q1 - p2
         M_diff2 = q2 - p1
-        loss12 = (M_diff1 * M_diff1).mean()
         loss21 = (M_diff2 * M_diff2).mean()
     elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))       
-
-    loss_mf_rand = (loss12 + loss21)/2
+        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+        
+    loss_mf_rand = loss21
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand
 
