@@ -224,6 +224,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
 
     M_t = f_t @ prototypes.t()
+    M_s = f_s @ prototypes.t()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
@@ -250,6 +251,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
     
     M_t = f_t @ prototypes.t()
+    M_s = f_s @ prototypes.t()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
@@ -279,6 +281,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_t = F.normalize(f_t, dim=-1, p=2)
     
     M_t = f_t @ prototypes.t()
+    M_s = f_s @ prototypes.t()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
