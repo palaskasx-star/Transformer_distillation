@@ -55,6 +55,15 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--model', default='deit_base_patch16_224', type=str, metavar='MODEL',
                         help='Name of model to train')
+    #############################################################
+    # DINOv3 specific parameters
+    parser.add_argument('--dinov3-repo', default='./dinov3', type=str, 
+                        help='Path to the cloned facebookresearch/dinov3 repository')
+    parser.add_argument('--backbone-weights', default='', type=str, 
+                        help='Path to the DINOv3 backbone .pth file')
+    parser.add_argument('--head-weights', default='', type=str, 
+                        help='Path to the DINOv3 classification head .pth file')
+    #############################################################
     parser.add_argument('--input-size', default=224, type=int, help='images input size')
 
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT',
@@ -568,6 +577,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
