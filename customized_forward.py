@@ -26,9 +26,67 @@ def register_forward(model, model_name):
     elif model_name.split('_')[0] == 'regnety':
         model.forward_features = MethodType(regnet_forward_features, model)
         model.forward = MethodType(regnet_forward, model)
+    elif 'dinov3' in model_name.lower():
+        model.forward_features = MethodType(dinov3_forward_features, model)
+        model.forward = MethodType(dinov3_forward, model)
     else:
         raise RuntimeError(f'Not defined customized method forward for model {model_name}')
 
+def dinov3_forward_features(self, x, require_feat: bool = False):
+    
+    # Initialize lists
+    block_outs = []
+    num_reg = self.reg_token.shape[1]
+
+
+    # --------------------------------------------------------
+    # 2. Embedding & Token Prep
+    # --------------------------------------------------------
+    x = self.patch_embed(x)
+    x = x.flatten(1, 2) 
+
+    # Expand special tokens
+    cls_token = self.cls_token.expand(x.shape[0], -1, -1)
+    reg_tokens = self.reg_token.expand(x.shape[0], -1, -1)
+    
+    
+    # Concatenate: [CLS, REG..., PATCH...]
+    x = torch.cat((cls_token, reg_tokens, x), dim=1)
+    x = self.pos_drop(x)
+
+
+    for blk in self.blocks:
+        x = blk(x)
+        
+        if require_feat:
+            cls_t = x[:, 0:1] 
+            patch_t = x[:, 1+num_reg:] 
+            combined = torch.cat([cls_t, patch_t], dim=1)
+
+            block_outs.append(combined.clone())
+
+
+    x = self.norm(x)
+
+    if require_feat:
+        return x[:, 0], block_outs
+    else:
+        return x[:, 0]
+
+def dinov3_forward(self, x, require_feat: bool = True):
+    if require_feat:
+        # Get all lists
+        cls_feat, block_outs = self.forward_features(x, require_feat=True)
+        
+        # Compute final logits
+        x_cls = self.head(cls_feat)
+        
+        # Return: (Patches, Registers, CLS, Logits)
+        return x_cls, block_outs
+    else:
+        cls_feat = self.forward_features(x, require_feat=False)
+        x_cls = self.head(cls_feat)
+        return x_cls
 
 # deit & vit
 def vit_forward_features(self, x, require_feat: bool = False):
@@ -44,7 +102,10 @@ def vit_forward_features(self, x, require_feat: bool = False):
     block_outs = []
     for i, blk in enumerate(self.blocks):
         x = blk(x)
-        block_outs.append(x)
+        if self.dist_token is None:
+            block_outs.append(x)
+        else:
+            block_outs.append(x[:, 1:])
 
     x = self.norm(x)
     if require_feat:
@@ -163,3 +224,6 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
+
+
