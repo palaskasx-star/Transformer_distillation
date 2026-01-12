@@ -423,7 +423,7 @@ def main(args):
                     projector = torch.nn.Sequential(
                         torch.nn.Linear(feature_dim_student, hidden_dim),
                         torch.nn.BatchNorm1d(hidden_dim),
-                        torch.nn.ReLU(inplace=True),
+                        torch.nn.GELU(),
                         torch.nn.Linear(hidden_dim, feature_dim_teacher)
                         # The L2 Norm is usually a functional call in the forward pass, 
                         # not a layer here, but it is effectively part of the "head".
@@ -605,6 +605,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
