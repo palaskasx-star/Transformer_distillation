@@ -401,7 +401,6 @@ def main(args):
                 
                 projector = torch.nn.Sequential(
                     torch.nn.Linear(feature_dim_student, hidden_dim),
-                    torch.nn.BatchNorm1d(hidden_dim),
                     torch.nn.GELU(),
                     torch.nn.Linear(hidden_dim, feature_dim_teacher)
                 ).to(device)
@@ -584,6 +583,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
