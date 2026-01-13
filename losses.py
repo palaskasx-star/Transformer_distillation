@@ -252,7 +252,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     M_t = f_t @ prototypes.protos[0].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
-
+    M_s = f_s @ prototypes.protos[0].t()
     p1 = F.softmax(M_s / temperature, dim=2)
 
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
@@ -278,7 +278,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     M_t = f_t @ prototypes.protos[1].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
-
+    M_s = f_s @ prototypes.protos[1].t()
     p1 = F.softmax(M_s / temperature, dim=2)
 
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
@@ -304,10 +304,11 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     loss_KoLeo_patch_data = KoLeoData(f_s)
     loss_KoLeo_patch_proto = KoLeoPrototypes( prototypes.protos[0])
-
+    
     M_t = f_t @ prototypes.protos[2].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
-
+    
+    M_s = f_s @ prototypes.protos[2].t()
     p1 = F.softmax(M_s / temperature, dim=2)
 
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
