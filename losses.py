@@ -272,8 +272,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    loss_KoLeo_patch_data = KoLeoData(f_s)
-    loss_KoLeo_patch_proto = KoLeoPrototypes( prototypes.protos[0])
+    loss_KoLeo_cls_data = KoLeoData(f_s)
+    loss_KoLeo_cls_proto = KoLeoPrototypes( prototypes.protos[1])
 
     M_t = f_t @ prototypes.protos[1].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
@@ -302,8 +302,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    loss_KoLeo_patch_data = KoLeoData(f_s)
-    loss_KoLeo_patch_proto = KoLeoPrototypes( prototypes.protos[0])
+    loss_KoLeo_rand_data = KoLeoData(f_s)
+    loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
     
     M_t = f_t @ prototypes.protos[2].t()
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
