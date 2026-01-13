@@ -313,7 +313,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_cls = loss21/2
+    loss_mf_rand = loss21/2
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
