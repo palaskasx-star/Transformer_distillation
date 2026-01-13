@@ -203,6 +203,8 @@ def get_args_parser():
     parser.add_argument('--use-prototypes', action='store_true')
     parser.add_argument('--prototypes-number', default=256, type=int)
 
+    parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
+                help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
     return parser
 
 
@@ -273,7 +275,7 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
+    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
     if args.use_prototypes:
         extra_info += f"_prototypes_{args.prototypes_number}"
     output_dir = output_dir / extra_info
@@ -391,8 +393,21 @@ def main(args):
             torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
             proto = torch.nn.Parameter(proto)   # make it trainable
             prototypes.append(proto)
-            # Replace random matrices with learnable linear layers (projector networks)
-            projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+
+            if getattr(args, 'projector_type', 'matrix') == 'MLP':
+                # MLP: Linear -> ReLU -> Linear
+
+                hidden_dim = 2048
+                
+                projector = torch.nn.Sequential(
+                    torch.nn.Linear(feature_dim_student, hidden_dim),
+                    torch.nn.BatchNorm1d(hidden_dim),
+                    torch.nn.GELU(),
+                    torch.nn.Linear(hidden_dim, feature_dim_teacher)
+                ).to(device)
+            else:
+                projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+
             projectors_nets.append(projector)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
@@ -569,6 +584,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
