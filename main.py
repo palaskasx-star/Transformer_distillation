@@ -348,13 +348,6 @@ def main(args):
         )
         register_forward(teacher_model, args.teacher_model)
 
-        if args.teacher_path.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.teacher_path, map_location='cpu', check_hash=True)
-        else:
-            checkpoint = torch.load(args.teacher_path, map_location='cpu')
-
-        teacher_model.load_state_dict(new_state_dict)
         teacher_model.to(device)
         teacher_model.eval()
 
@@ -589,4 +582,5 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
