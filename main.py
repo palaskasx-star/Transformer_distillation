@@ -342,29 +342,12 @@ def main(args):
         print(f"Creating teacher model: {args.teacher_model}")
         teacher_model = create_model(
             args.teacher_model,
-            pretrained=False,
+            pretrained=True,
             num_classes=args.nb_classes,
-            global_pool='avg',
+            img_size=args.input_size
         )
         register_forward(teacher_model, args.teacher_model)
 
-        if args.teacher_path.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.teacher_path, map_location='cpu', check_hash=True)
-        else:
-            checkpoint = torch.load(args.teacher_path, map_location='cpu')
-
-        # process distributed model
-        from collections import OrderedDict
-        new_state_dict = OrderedDict()
-        for k in checkpoint['model']:
-            if k[:7] != 'module.':
-                new_state_dict = checkpoint['model']
-                break
-            new_key = k[7:]
-            new_state_dict[new_key] = checkpoint['model'][k]
-
-        teacher_model.load_state_dict(new_state_dict)
         teacher_model.to(device)
         teacher_model.eval()
 
@@ -599,3 +582,4 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
