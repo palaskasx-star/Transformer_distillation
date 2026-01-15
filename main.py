@@ -354,19 +354,31 @@ def main(args):
         else:
             checkpoint = torch.load(args.teacher_path, map_location='cpu')
 
-        # process distributed model
+        # 1. Handle different checkpoint structures (The fix for KeyError: 'model')
+        if 'model' in checkpoint:
+            state_dict = checkpoint['model']
+        elif 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        else:
+            # If no keys match, the checkpoint itself is the state_dict (common in timm/HF)
+            state_dict = checkpoint
+
+        # 2. Process distributed model (remove 'module.' prefix if needed)
         from collections import OrderedDict
         new_state_dict = OrderedDict()
-        for k in checkpoint['model']:
-            if k[:7] != 'module.':
-                new_state_dict = checkpoint['model']
-                break
-            new_key = k[7:]
-            new_state_dict[new_key] = checkpoint['model'][k]
+        
+        for k, v in state_dict.items():
+            if k.startswith('module.'):
+                # Remove the 'module.' prefix
+                new_state_dict[k[7:]] = v
+            else:
+                # Keep as is
+                new_state_dict[k] = v
 
         teacher_model.load_state_dict(new_state_dict)
         teacher_model.to(device)
         teacher_model.eval()
+
 
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
@@ -598,6 +610,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
