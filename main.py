@@ -368,11 +368,17 @@ def main(args):
         new_state_dict = OrderedDict()
         
         for k, v in state_dict.items():
-            if k.startswith('module.'):
-                # Remove the 'module.' prefix
-                new_state_dict[k[7:]] = v
-            else:
-                # Keep as is
+                # Step A: Remove 'module.' prefix if it exists
+                if k.startswith('module.'):
+                    k = k[7:]
+                
+                # Step B: Rename 'norm' to 'fc_norm' (The fix for your error)
+                if k == 'norm.weight':
+                    k = 'fc_norm.weight'
+                elif k == 'norm.bias':
+                    k = 'fc_norm.bias'
+                
+                # Step C: Save to new dictionary
                 new_state_dict[k] = v
 
         teacher_model.load_state_dict(new_state_dict)
@@ -610,6 +616,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
