@@ -354,6 +354,13 @@ def main(args):
         else:
             checkpoint = torch.load(args.teacher_path, map_location='cpu')
 
+        if 'model' in checkpoint:
+            state_dict = checkpoint['model']
+        elif 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        else:
+            state_dict = checkpoint
+            
         # process distributed model
         from collections import OrderedDict
         new_state_dict = OrderedDict()
@@ -599,4 +606,5 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
