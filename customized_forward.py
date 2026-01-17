@@ -257,50 +257,31 @@ def regnet_forward(self, x, require_feat: bool = True):
 def vit3_forward_features(self, x, require_feat: bool = False):
     x = self.patch_embed(x)
     
-    # --- 1. Distillation Token Handling (Old DeiT) ---
-    dist_token = getattr(self, 'dist_token', None)
-    
     x = x + self.pos_embed
     
-    # Create CLS token (and Dist token if it exists)
     cls_token = self.cls_token.expand(x.shape[0], -1, -1)
     
-    if dist_token is None:
-        x = torch.cat((cls_token, x), dim=1)
-    else:
-        # Old DeiT with distillation token
-        x = torch.cat((cls_token, dist_token.expand(x.shape[0], -1, -1), x), dim=1)
-    
+    x = torch.cat((cls_token, x), dim=1)
+
 
     x = self.pos_drop(x)
 
-    # --- 3. Blocks ---
     block_outs = []
     for i, blk in enumerate(self.blocks):
         x = blk(x)
         
-        # Save intermediate features
-        if dist_token is None:
-            block_outs.append(x)
-        else:
-            # Skip CLS token in output (and dist token if present)
-            # Standard convention is to return the patch tokens
-            block_outs.append(x[:, 2:] if dist_token is not None else x[:, 1:])
+        block_outs.append(x)
+
 
     x = self.norm(x)
     
-    # --- 4. Return ---
-    # Determine what to return based on tokens present
+
     if require_feat:
-        if dist_token is None:
-            return x[:, 0], block_outs
-        else:
-            return (x[:, 0], x[:, 1]), block_outs
+        return x[:, 0], block_outs
+
     else:
-        if dist_token is None:
-            return x[:, 0]
-        else:
-            return x[:, 0], x[:, 1]
+        return x[:, 0]
+
 
 # vit_forward remains the same as the previous version I gave you
 def vit3_forward(self, x, require_feat: bool = True):
@@ -313,23 +294,9 @@ def vit3_forward(self, x, require_feat: bool = True):
 
     head_dist = getattr(self, 'head_dist', None)
 
-    if head_dist is not None:
-        # Old DeiT (Two Heads)
-        x, x_dist = self.head(x_feat[0]), head_dist(x_feat[1])
-        
-        if self.training and not torch.jit.is_scripting():
-            if require_feat:
-                return (x, x_dist), block_outs
-            return x, x_dist
-        else:
-            res = (x + x_dist) / 2
-            if require_feat:
-                return res, block_outs
-            return res
-            
-    else:
-        # Standard ViT / DeiT-3 (Single Head)
-        x = self.head(x_feat)
-        if require_feat:
-            return x, block_outs
-        return x
+    x = self.head(x_feat)
+    if require_feat:
+        return x, block_outs
+    return x
+
+
