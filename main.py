@@ -364,12 +364,12 @@ def main(args):
         # process distributed model
         from collections import OrderedDict
         new_state_dict = OrderedDict()
-        for k in checkpoint['model']:
+        for k in state_dict:
             if k[:7] != 'module.':
-                new_state_dict = checkpoint['model']
+                new_state_dict = state_dict
                 break
             new_key = k[7:]
-            new_state_dict[new_key] = checkpoint['model'][k]
+            new_state_dict[new_key] = state_dict[k]
 
         teacher_model.load_state_dict(new_state_dict)
         teacher_model.to(device)
@@ -606,5 +606,6 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
