@@ -412,7 +412,7 @@ def main(args):
             # Create 3 prototype matrices and 3 projectors for each i
             proto_list = []
             projector_list = []
-            if args.s_id[idx] == 11:
+            if feat == 11:
                 for j in range(3):
                     # Initialize prototype with uniform distribution
                     proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
@@ -609,3 +609,4 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
