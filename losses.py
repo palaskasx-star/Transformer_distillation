@@ -222,7 +222,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
         M_t = M_t/torch.sum(M_t, dim=2, keepdim=True)
         loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
 
-    return loss_mf_patch, loss_mf_cls, loss_mf_rand
+    return loss_mf_patch, loss_mf_cls, loss_mf_rand, torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(0)
 
 def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     """
