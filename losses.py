@@ -139,7 +139,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
     return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
-def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None):
+def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8, prototypes=None, projectors_net=None):
     # intra-image manifold loss
     f_s = F_s.clone()
     f_t = F_t.clone()
@@ -163,8 +163,8 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
     elif distance == 'KL':
         M_s = (M_s + 1)/2
         M_t = (M_t + 1)/2
-        M_s = M_s/torch.sum(M_s, dim=2, keepdim=True)
-        M_t = M_t/torch.sum(M_t, dim=2, keepdim=True)
+        M_s = F.softmax(M_s / temperature, dim=2)
+        M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_patch =  -(M_t * torch.log(M_s + eps)).mean()
     
 
@@ -190,8 +190,8 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
     elif distance == 'KL':
         M_s = (M_s + 1)/2
         M_t = (M_t + 1)/2
-        M_s = M_s/torch.sum(M_s, dim=2, keepdim=True)
-        M_t = M_t/torch.sum(M_t, dim=2, keepdim=True)
+        M_s = F.softmax(M_s / temperature, dim=2)
+        M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_cls =  -(M_t * torch.log(M_s + eps)).mean()
     
     # manifold loss among random sampled patches
@@ -218,8 +218,8 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
     elif distance == 'KL':
         M_s = (M_s + 1)/2
         M_t = (M_t + 1)/2
-        M_s = M_s/torch.sum(M_s, dim=2, keepdim=True)
-        M_t = M_t/torch.sum(M_t, dim=2, keepdim=True)
+        M_s = F.softmax(M_s / temperature, dim=2)
+        M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand, torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(0)
