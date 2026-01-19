@@ -106,7 +106,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
         if max_patch_num > 0:
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
-        if id_s[idx] == 11:
+        if id_s == 11:
             loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = layer_mf_loss_prototypes(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
         else:
