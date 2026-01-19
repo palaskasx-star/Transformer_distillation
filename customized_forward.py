@@ -22,6 +22,8 @@ def register_forward(model, model_name):
     if model_name.split('_')[0] == 'deit' or model_name.split('_')[0] == 'deit3':
         model.forward_features = MethodType(vit_forward_features, model)
         model.forward = MethodType(vit_forward, model)
+        if 'distilled' in model_name:
+            model.forward_head = MethodType(vit_dist_forward_head, model)
     elif model_name.split('_')[0] == 'cait':
         model.forward_features = MethodType(cait_forward_features, model)
         model.forward = MethodType(cait_forward, model)
@@ -92,19 +94,7 @@ def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -
     
     return x, block_outs
 
-    """Forward pass through classifier head.
 
-    Args:
-        x: Feature tensor.
-        pre_logits: Return pre-logits if True.
-
-    Returns:
-        Output tensor.
-    """
-    x = self.pool(x)
-    x = self.fc_norm(x)
-    x = self.head_drop(x)
-    return x if pre_logits else self.head(x)
 
 def dinov3_forward(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
     """Forward pass.
@@ -143,6 +133,19 @@ def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor
     x = self.norm(x)
     return x, block_outs
 
+
+def vit_dist_forward_head(self, x, pre_logits: bool = False) -> torch.Tensor:
+    x, x_dist = x[:, 0], x[:, 1]
+    if pre_logits:
+        return (x + x_dist) / 2
+    x = self.head(x)
+    x_dist = self.head_dist(x_dist)
+    if self.distilled_training and self.training and not torch.jit.is_scripting():
+        # only return separate classification predictions when training in distilled mode
+        return x, x_dist
+    else:
+        # during standard train / finetune, inference average the classifier predictions
+        return (x + x_dist) / 2
 
 def vit_forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None, require_feat: bool = False) -> torch.Tensor:
     x, block_outs = self.forward_features(x, attn_mask=attn_mask)
