@@ -165,7 +165,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
         M_t = (M_t + 1)/2
         M_s = M_s/torch.sum(M_s, dim=2, keepdim=True)
         M_t = M_t/torch.sum(M_t, dim=2, keepdim=True)
-        loss_mf_patch = (M_s * (torch.log(M_s + eps) - torch.log(M_t + eps))).mean()
+        loss_mf_patch =  -(M_t * torch.log(M_s + eps)).mean()
     
 
     # cls token loss
@@ -192,7 +192,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
         M_t = (M_t + 1)/2
         M_s = M_s/torch.sum(M_s, dim=2, keepdim=True)
         M_t = M_t/torch.sum(M_t, dim=2, keepdim=True)
-        loss_mf_cls = (M_s * (torch.log(M_s + eps) - torch.log(M_t + eps))).mean()
+        loss_mf_cls =  -(M_t * torch.log(M_s + eps)).mean()
     
     # manifold loss among random sampled patches
     bsz, patch_num, _ = F_s.shape
@@ -220,7 +220,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
         M_t = (M_t + 1)/2
         M_s = M_s/torch.sum(M_s, dim=2, keepdim=True)
         M_t = M_t/torch.sum(M_t, dim=2, keepdim=True)
-        loss_mf_rand = (M_s * (torch.log(M_s + eps) - torch.log(M_t + eps))).mean()
+        loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand
 
@@ -261,7 +261,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_patch = (2*loss12 + loss21)/2
+    loss_mf_patch = (loss12 + loss21)/2
 
     # cls token loss
     f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
@@ -290,7 +290,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_cls = (2*loss12 + loss21)/2
+    loss_mf_cls = (loss12 + loss21)/2
 
     # manifold loss among random sampled patches
     bsz, patch_num, _ = F_s.shape
@@ -323,7 +323,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_rand = (2*loss12 + loss21)/2
+    loss_mf_rand = (loss12 + loss21)/2
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
