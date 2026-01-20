@@ -206,9 +206,12 @@ def get_args_parser():
     parser.add_argument('--KoLeoData', default=0.1, type=float)
     parser.add_argument('--KoLeoPrototypes', default=0.1, type=float)
 
-    parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
+    parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP', 'Conv'],
                 help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
 
+    # VitKd knowledge transfer
+    parser.add_argument('--use-vitkd', action='store_true', default=False)
+    
     return parser
 
 
@@ -375,7 +378,102 @@ def main(args):
         teacher_model.to(device)
         teacher_model.eval()
 
+    class ViTKDProjector(torch.nn.Module):
+        def __init__(self, student_dims, teacher_dims):
+            super().__init__()
+            
+            # --- 1. Align Layer 2 (Low-level Mimicking) ---
+            # Matches `self.align2` in ViTKD: ModuleList with 2 Linear layers
+            if student_dims != teacher_dims:
+                self.align2 = torch.nn.ModuleList([
+                    torch.nn.Linear(student_dims, teacher_dims, bias=True)
+                    for i in range(2)])
+                
+                # --- 2. Align Layer 1 (High-level Projection) ---
+                # Matches `self.align` in ViTKD
+                self.align = torch.nn.Linear(student_dims, teacher_dims, bias=True)
+            else:
+                self.align2 = None
+                self.align = None
 
+            # --- 3. Mask Token ---
+            self.mask_token = torch.nn.Parameter(torch.zeros(1, 1, teacher_dims))
+
+            # --- 4. Generation (CNN) ---
+            self.generation = torch.nn.Sequential(
+                torch.nn.Conv2d(teacher_dims, teacher_dims, kernel_size=3, padding=1),
+                torch.nn.ReLU(inplace=True), 
+                torch.nn.Conv2d(teacher_dims, teacher_dims, kernel_size=3, padding=1)
+            )
+
+        def forward_mask(self):
+            """
+            1. Forward pass for the Mask Token.
+            Returns the raw mask token parameter.
+            """
+            return self.mask_token
+
+        def forward_align(self, x):
+            """
+            2. Forward pass for the 'align' layer (High-level features).
+            Handles identity if dims match.
+            """
+            if self.align is not None:
+                return self.align(x)
+            return x
+
+        def forward_align2(self, x):
+            """
+            3. Forward pass for the 'align2' layer (Low-level Mimicking).
+            Handles the specific splitting and concatenation logic from ViTKD.
+            Expected x shape: [B, 2, N, D]
+            """
+            if self.align2 is not None:
+                # Replicates the original loop logic:
+                # for i in range(2): xc = align2[i](low_s[:,i])...
+                out0 = self.align2[0](x[:, 0]).unsqueeze(1)
+                out1 = self.align2[1](x[:, 1]).unsqueeze(1)
+                return torch.cat((out0, out1), dim=1)
+            return x
+
+        def forward_generation(self, x):
+            """
+            4. Forward pass for the Generator (CNN).
+            Handles reshaping (B, N, C) -> (B, C, H, W) -> CNN -> (B, N, C).
+            """
+            B, N, C = x.shape
+            H = int(N**0.5)
+            W = H
+            
+            # Reshape to Image format
+            x = x.transpose(1, 2).view(B, C, H, W)
+            
+            # Apply CNN
+            x = self.generation(x)
+            
+            # Flatten back to Sequence format
+            x = x.flatten(2).transpose(1, 2)
+            return x
+
+        def forward(self, x):
+            # Optional: Default behavior if called directly (e.g., just high-level generation)
+            x = self.forward_align(x)
+            return self.forward_generation(x)
+    
+    class MLPProjector(torch.nn.Module):
+        def __init__(self, in_dim, out_dim, hidden_dim=2048):
+            super().__init__()
+            self.layer1 = torch.nn.Linear(in_dim, hidden_dim)
+            self.act = torch.nn.GELU()
+            self.layer2 = torch.nn.Linear(hidden_dim, out_dim)
+
+        def forward(self, x):
+            x_hidden = self.layer1(x)
+            x_gelu = self.act(x_hidden) # Capture the GELU output
+            x_out = self.layer2(x_gelu)
+            # Return tuple: (intermediate, final)
+            return x_gelu, x_out
+        
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
             super().__init__()
@@ -394,69 +492,73 @@ def main(args):
                 proj_module.projs = torch.nn.ModuleList(proj_list)
                 self.projectors.append(proj_module)
 
-    if args.use_prototypes:
-        images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
+    model.add_module("vitkd_projector", None)
+    model.add_module("proto_proj_module", None)
 
-        with torch.no_grad():
-            # Teacher
-            _, features_teacher = teacher_model(images)
-            # Student
-            _, features_student = model(images)
 
-        prototypes = []
-        projectors_nets = []
-        for i, feat in enumerate(args.s_id):
-            feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
-            feature_dim_student = features_student[args.s_id[i]].shape[2]
+    if args.use_vitkd:
+        vitkd_projector = ViTKDProjector(student_dims=192, teacher_dims=384).to(device)
+        model.add_module("vitkd_projector", vitkd_projector)
 
-            # Create 3 prototype matrices and 3 projectors for each i
-            proto_list = []
-            projector_list = []
-            if feat == 11:
+    else:
+        
+        if args.use_prototypes:
+            images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
+
+            with torch.no_grad():
+                # Teacher
+                _, features_teacher = teacher_model(images)
+                # Student
+                _, features_student = model(images)
+
+            prototypes = []
+            projectors_nets = []
+
+            for i, feat in enumerate(args.s_id):
+                feature_dim_teacher = 384
+                feature_dim_student = 192
+
+                # Create 3 prototype matrices and 3 projectors for each i
+                proto_list = []
+                projector_list = []
+
                 for j in range(3):
-                    # Initialize prototype with uniform distribution
                     proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
                     _sqrt_k = (1. / feature_dim_teacher) ** 0.5
                     torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
                     proto = torch.nn.Parameter(proto)
                     proto_list.append(proto)
-    
-    
-                    if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                        hidden_dim = 2048
-                        
-                        projector = torch.nn.Sequential(
-                            torch.nn.Linear(feature_dim_student, hidden_dim),
-                            torch.nn.GELU(),
-                            torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                        ).to(device)
-                    else:
+
+                    if args.projector_type == 'MLP':
+                        projector = MLPProjector(
+                            in_dim=feature_dim_student, 
+                            out_dim=feature_dim_teacher, 
+                            hidden_dim=2048
+                        ).to(device)                
+                    elif args.projector_type == 'matrix':
                         projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-    
+                    
                     projector_list.append(projector)
-            else:
-                proto_list.append(None)
-                projector_list.append(None)
-                
-            prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
 
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
-        model.add_module("proto_proj_module", proto_proj_module)
-    else:
-        prototypes = []
-        projectors_nets = []
-        for i, feat in enumerate(args.s_id):
-            proto_list = []
-            projector_list = []
-            for j in range(3):
-                proto_list.append(None)
-                projector_list.append(None)
-            prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
+                prototypes.append(proto_list)
+                projectors_nets.append(projector_list)
 
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
-        model.add_module("proto_proj_module", proto_proj_module)
+            proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
+            model.add_module("proto_proj_module", proto_proj_module)
+        else:
+            prototypes = []
+            projectors_nets = []
+            for i, feat in enumerate(args.s_id):
+                proto_list = []
+                projector_list = []
+                for j in range(3):
+                    proto_list.append(None)
+                    projector_list.append(None)
+                prototypes.append(proto_list)
+                projectors_nets.append(projector_list)
+
+            proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
+            model.add_module("proto_proj_module", proto_proj_module)
 
 
 
@@ -492,8 +594,8 @@ def main(args):
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
         criterion = torch.nn.CrossEntropyLoss()
-
-    criterion = DistillationLoss(criterion, teacher_model, model.module.proto_proj_module.prototypes, model.module.proto_proj_module.projectors, args)
+    
+    criterion = DistillationLoss(criterion, teacher_model, args, model.module.proto_proj_module,  model.module.vitkd_projector)
 
 
     #output_dir = Path(args.output_dir)
@@ -609,4 +711,3 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
-
