@@ -133,7 +133,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
         if max_patch_num > 0:
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
-        if id_s == 11:
+        if prototypes[idx].protos[0] is not None:
             loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = layer_mf_loss_prototypes(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
         else:
@@ -187,8 +187,6 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1,
         M_diff = M_t - M_s
         loss_mf_patch = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1)/2
-        M_t = (M_t + 1)/2
         M_s = F.softmax(M_s / temperature, dim=2)
         M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_patch =  -(M_t * torch.log(M_s + eps)).mean()
@@ -214,8 +212,6 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1,
         M_diff = M_t - M_s
         loss_mf_cls = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1)/2
-        M_t = (M_t + 1)/2
         M_s = F.softmax(M_s / temperature, dim=2)
         M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_cls =  -(M_t * torch.log(M_s + eps)).mean()
@@ -242,8 +238,6 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1,
         M_diff = M_t - M_s
         loss_mf_rand = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1)/2
-        M_t = (M_t + 1)/2
         M_s = F.softmax(M_s / temperature, dim=2)
         M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
