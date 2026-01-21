@@ -227,8 +227,8 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
             prototypes.protos[i].copy_(F.normalize(prototypes.protos[i], dim=1))
             
     # manifold loss among different patches (intra-sample)
-    f_s = F_s
-    f_t = F_t
+    f_s = F_s[:, 1:, :]
+    f_t = F_t[:, 1:, :]
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
