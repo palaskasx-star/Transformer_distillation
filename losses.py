@@ -161,8 +161,6 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1,
         M_diff = M_t - M_s
         loss_mf_patch = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1)/2
-        M_t = (M_t + 1)/2
         M_s = F.softmax(M_s / temperature, dim=2)
         M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_patch =  -(M_t * torch.log(M_s + eps)).mean()
@@ -188,8 +186,6 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1,
         M_diff = M_t - M_s
         loss_mf_cls = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1)/2
-        M_t = (M_t + 1)/2
         M_s = F.softmax(M_s / temperature, dim=2)
         M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_cls =  -(M_t * torch.log(M_s + eps)).mean()
@@ -216,8 +212,6 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1,
         M_diff = M_t - M_s
         loss_mf_rand = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1)/2
-        M_t = (M_t + 1)/2
         M_s = F.softmax(M_s / temperature, dim=2)
         M_t = F.softmax(M_t / temperature, dim=2)
         loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
