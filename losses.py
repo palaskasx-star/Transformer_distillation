@@ -406,9 +406,9 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
 
     # make the matrix sums to 1
     sum_Q = Q.sum(dim=(1, 2), keepdim=True)
-    print(f"old:{sum_Q}}")
+    print(f"old:{sum_Q}")
     dist.all_reduce(sum_Q)
-    print(f"new:{sum_Q}}")
+    print(f"new:{sum_Q}")
     Q /= sum_Q
 
     for it in range(nmb_iters):
