@@ -270,9 +270,9 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
     M_s = f_s @ prototypes.protos[2].t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, world_size=world_size).detach()
     M_t = f_t @ prototypes.protos[2].t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, world_size=world_size).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
@@ -347,9 +347,9 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     loss_KoLeo_cls_proto = KoLeoPrototypes( prototypes.protos[1])
     
     M_s = f_s @ prototypes.protos[1].t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3).detach()
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, world_size=world_size).detach()
     M_t = f_t @ prototypes.protos[1].t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3).detach()
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, world_size=world_size).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
