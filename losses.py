@@ -110,9 +110,6 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
 
         dev = F_t.device
 
-        print(beta)
-        print(gamma)
-        print(delta)
         if max_patch_num > 0:
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
