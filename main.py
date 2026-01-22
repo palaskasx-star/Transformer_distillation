@@ -412,15 +412,16 @@ def main(args):
             # Create 3 prototype matrices and 3 projectors for each i
             proto_list = []
             projector_list = []
-
-            for j in range(3):
+            if args.gamma == 0.0:
+                proto_list.append(None)
+                projector_list.append(None)
+            else:
                 # Initialize prototype with uniform distribution
                 proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
                 _sqrt_k = (1. / feature_dim_teacher) ** 0.5
                 torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
                 proto = torch.nn.Parameter(proto)
                 proto_list.append(proto)
-
 
                 if getattr(args, 'projector_type', 'matrix') == 'MLP':
                     hidden_dim = 2048
@@ -432,7 +433,53 @@ def main(args):
                     ).to(device)
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                projector_list.append(projector)
 
+            
+            if args.distillation_beta == 0.0:
+                proto_list.append(None)
+                projector_list.append(None)
+            else:
+                # Initialize prototype with uniform distribution
+                proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
+                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                proto = torch.nn.Parameter(proto)
+                proto_list.append(proto)
+
+                if getattr(args, 'projector_type', 'matrix') == 'MLP':
+                    hidden_dim = 2048
+                    
+                    projector = torch.nn.Sequential(
+                        torch.nn.Linear(feature_dim_student, hidden_dim),
+                        torch.nn.GELU(),
+                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
+                    ).to(device)
+                else:
+                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                projector_list.append(projector)
+                
+            if args.delta == 0.0:
+                proto_list.append(None)
+                projector_list.append(None)
+            else:
+                # Initialize prototype with uniform distribution
+                proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
+                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                proto = torch.nn.Parameter(proto)
+                proto_list.append(proto)
+
+                if getattr(args, 'projector_type', 'matrix') == 'MLP':
+                    hidden_dim = 2048
+                    
+                    projector = torch.nn.Sequential(
+                        torch.nn.Linear(feature_dim_student, hidden_dim),
+                        torch.nn.GELU(),
+                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
+                    ).to(device)
+                else:
+                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
                 projector_list.append(projector)
 
             prototypes.append(proto_list)
@@ -606,5 +653,6 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
