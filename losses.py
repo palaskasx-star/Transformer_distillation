@@ -121,6 +121,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
                 print("NOT UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG BBBBBBBBBBBBBBBBBBEEEEEEEEEEEEEEEEETTTTTTTTTTTTTAAAAAAAAAAAAA")
                 loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
             else:
+                print(" UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG BBBBBBBBBBBBBBBBBBEEEEEEEEEEEEEEEEETTTTTTTTTTTTTAAAAAAAAAAAAA")
                 loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = layer_mf_loss_prototypes_cls(
                     F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
                 
@@ -128,6 +129,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
                 print("NOT UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG GGGGGGGGGGGGGGGAAAAAAAAAAAAAAAAAMMMMMMMMMMMMMMMAAAAAAAAAAAAAA")
                 loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
             else:
+                print("UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG GGGGGGGGGGGGGGGAAAAAAAAAAAAAAAAAMMMMMMMMMMMMMMMAAAAAAAAAAAAAA")
                 loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = layer_mf_loss_prototypes_patch(
                     F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)    
             
@@ -135,6 +137,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
                 print("NOT UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG DDDDDDEEEEEEEEEEEEEEEEELLLLLLLLLLLLTTTTTTTTTTAAAAAAAAAAAA")
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
             else:
+                print("UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG DDDDDDEEEEEEEEEEEEEEEEELLLLLLLLLLLLTTTTTTTTTTAAAAAAAAAAAA")
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_prototypes_rand(
                     F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
 
