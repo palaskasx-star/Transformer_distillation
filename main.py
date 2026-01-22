@@ -413,6 +413,7 @@ def main(args):
             proto_list = []
             projector_list = []
             if args.gamma == 0.0:
+                print("NOOOOOOOOOOOOOOOOOO GGGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAMMMMMMMMMMMMMMMMAAAAAAAAAAAAAAAAAAA")
                 proto_list.append(None)
                 projector_list.append(None)
             else:
@@ -437,6 +438,7 @@ def main(args):
 
             
             if args.distillation_beta == 0.0:
+                print("NOOOOOOOOOOOOOOOOOO BBBBBBBBBBBBEEEEEEEEEEEEEEEEEEEEEEEEEETTTTTTTTTTTTTTTTTAAAAAAAAAAAAAAAAAA")
                 proto_list.append(None)
                 projector_list.append(None)
             else:
@@ -460,6 +462,7 @@ def main(args):
                 projector_list.append(projector)
                 
             if args.delta == 0.0:
+                print("NOOOOOOOOOOOOOOOOOO DDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLLLTTTTTTTTTTTTAAAAAAAAAAAAAAAAA")
                 proto_list.append(None)
                 projector_list.append(None)
             else:
@@ -653,6 +656,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
