@@ -110,30 +110,33 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
 
         dev = F_t.device
 
+        print(beta)
+        print(gamma)
+        print(delta)
         if max_patch_num > 0:
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
         if prototypes[idx].protos[0] is not None:
-            if beta != 0.0:
-                print("UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG BBBBBBBBBBBBBBBBBBEEEEEEEEEEEEEEEEETTTTTTTTTTTTTAAAAAAAAAAAAA")
+            if beta == 0.0:
+                print("NOT UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG BBBBBBBBBBBBBBBBBBEEEEEEEEEEEEEEEEETTTTTTTTTTTTTAAAAAAAAAAAAA")
+                loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+            else:
                 loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = layer_mf_loss_prototypes_cls(
                     F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
-            else:
-                loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-            
-            if gamma != 0.0:
-                print("UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG GGGGGGGGGGGGGGGAAAAAAAAAAAAAAAAAMMMMMMMMMMMMMMMAAAAAAAAAAAAAA")
-                loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = layer_mf_loss_prototypes_patch(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
-            else:
+                
+            if gamma == 0.0:
+                print("NOT UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG GGGGGGGGGGGGGGGAAAAAAAAAAAAAAAAAMMMMMMMMMMMMMMMAAAAAAAAAAAAAA")
                 loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+            else:
+                loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = layer_mf_loss_prototypes_patch(
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)    
             
-            if delta != 0.0:
-                print("UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG DDDDDDEEEEEEEEEEEEEEEEELLLLLLLLLLLLTTTTTTTTTTAAAAAAAAAAAA")
+            if delta == 0.0:
+                print("NOT UUUUUUUUUUUUUUUSSSSSSSSSSSSSSSSSSSSSSSSSIIIIIIIIIIIIIINNNNNNNNNNNNNNGGGGGGGGGGGGGG DDDDDDEEEEEEEEEEEEEEEEELLLLLLLLLLLLTTTTTTTTTTAAAAAAAAAAAA")
+                loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+            else:
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_prototypes_rand(
                     F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
-            else:
-                loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
         else:
             loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = layer_mf_loss(
