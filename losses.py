@@ -43,6 +43,10 @@ class DistillationLoss(nn.Module):
         self.prototypes = prototypes
         self.projectors_nets = projectors_nets
 
+        self.distillation_beta = distillation_beta
+        self.gamma = gamma
+        self.delta = delta
+
         self.world_size = args.world_size
 
     def forward(self, inputs, outputs, labels):
@@ -86,14 +90,14 @@ class DistillationLoss(nn.Module):
         loss_dist = distillation_loss
         loss_mf_cls, loss_mf_patch, loss_mf_rand = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
                                   self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance,
-                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size)  # manifold distillation loss
+                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, beta=self.distillation_beta, gamma=self.gamma, delta=self.delta)  # manifold distillation loss
         loss_mf_cls = loss_mf_cls
         loss_mf_patch = loss_mf_patch
         loss_mf_rand = loss_mf_rand
         return loss_base, loss_dist, loss_mf_cls, loss_mf_patch, loss_mf_rand
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1, beta=0, gamma=0, delta=0):
     losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         extra_tk_num = block_outs_s[0].shape[1] - block_outs_t[0].shape[1]
@@ -103,8 +107,24 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
         if prototypes[0] is not None:
-            loss_mf_patch, loss_mf_cls, loss_mf_rand = layer_mf_loss_prototypes(
-                F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
+            if beta != 0:
+                loss_mf_cls = layer_mf_loss_prototypes_cls(
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
+            else:
+                loss_mf_cls = , torch.tensor(0.)
+
+            if gamma != 0:
+                loss_mf_patch = layer_mf_loss_prototypes_patch(
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
+            else:
+                loss_mf_patch = , torch.tensor(0.)
+
+            if delta != 0:
+                loss_mf_rand = layer_mf_loss_prototypes_rand(
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size)
+            else:
+                loss_mf_rand = , torch.tensor(0.)
+
         else:
             loss_mf_patch, loss_mf_cls, loss_mf_rand = layer_mf_loss(
                 F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx])
@@ -204,7 +224,7 @@ def layer_mf_loss(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, protot
 
     return loss_mf_patch, loss_mf_cls, loss_mf_rand
 
-def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
     """
     prototypes = F.normalize(prototypes, dim=-1, p=2)
     """
@@ -237,7 +257,16 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     loss_mf_patch = (loss12 + loss21)/2
 
-    # cls token loss
+    return loss_mf_patch
+
+def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
+    """
+    prototypes = F.normalize(prototypes, dim=-1, p=2)
+    """
+    with torch.no_grad():
+        prototypes.copy_(F.normalize(prototypes, dim=1))
+    # manifold loss among different patches (intra-sample)
+
     f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
     f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
 
@@ -262,6 +291,15 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
     loss_mf_cls = (loss12 + loss21)/2
+
+    return loss_mf_cls
+
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, world_size=1):
+    """
+    prototypes = F.normalize(prototypes, dim=-1, p=2)
+    """
+    with torch.no_grad():
+        prototypes.copy_(F.normalize(prototypes, dim=1))
 
     # manifold loss among random sampled patches
     bsz, patch_num, _ = F_s.shape
@@ -293,8 +331,7 @@ def layer_mf_loss_prototypes(F_s, F_t, K, normalize=False, distance='MSE', eps=1
 
     loss_mf_rand = (loss12 + loss21)/2
 
-    return loss_mf_patch, loss_mf_cls, loss_mf_rand
-
+    return loss_mf_rand
 
 def merge(x, max_patch_num=196):
     B, P, C = x.shape
