@@ -112,6 +112,12 @@ def dinov3_forward(self, x: torch.Tensor, require_feat: bool = False) -> torch.T
 # deit & vit
 def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None, require_feat: bool = False) -> torch.Tensor:
     """Forward pass through feature layers (embeddings, transformer blocks, post-transformer norm)."""
+    num_reg = self.reg_token
+    if num_reg == None:
+        num_reg = 0
+    else:
+        num_reg = self.reg_token.shape[1]
+    
     x = self.patch_embed(x)
     x = self._pos_embed(x)
     x = self.patch_drop(x)
@@ -121,14 +127,23 @@ def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor
         # If mask provided, we need to apply blocks one by one
         for blk in self.blocks:
             x = blk(x, attn_mask=attn_mask)
-            block_outs.append(x)
+            cls_t = x[:, 0:1] 
+            patch_t = x[:, 1+num_reg:] 
+            combined = torch.cat([cls_t, patch_t], dim=1)
+            block_outs.append(combined)
     elif self.grad_checkpointing and not torch.jit.is_scripting():
         x = checkpoint_seq(self.blocks, x)
-        block_outs.append(x)
+        cls_t = x[:, 0:1] 
+        patch_t = x[:, 1+num_reg:] 
+        combined = torch.cat([cls_t, patch_t], dim=1)
+        block_outs.append(combined)
     else:
         for blk in self.blocks:
             x = blk(x)
-            block_outs.append(x)
+            cls_t = x[:, 0:1] 
+            patch_t = x[:, 1+num_reg:] 
+            combined = torch.cat([cls_t, patch_t], dim=1)
+            block_outs.append(combined)
 
     x = self.norm(x)
     return x, block_outs
@@ -227,3 +242,4 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
