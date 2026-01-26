@@ -104,8 +104,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
     losses_KoLeo_proto = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
 
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
-        extra_tk_num = block_outs_s[0].shape[1] - block_outs_t[0].shape[1]
-        F_s = block_outs_s[id_s][:, extra_tk_num:, :]  # remove additional tokens
+        F_s = block_outs_s[id_s]
         F_t = block_outs_t[id_t]
 
         dev = F_t.device
