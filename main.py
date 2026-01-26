@@ -299,7 +299,7 @@ def main(args):
         drop_block_rate=None,
         reg_tokens=args.reg_tokens
     )
-    register_forward(model, args.model)
+    register_forward(model, args.model, args.s_id)
 
     if args.finetune:
         if args.finetune.startswith('https'):
@@ -349,7 +349,7 @@ def main(args):
             num_classes=args.nb_classes,
             #global_pool='avg',
         )
-        register_forward(teacher_model, args.teacher_model)
+        register_forward(teacher_model, args.teacher_model, args.t_id)
 
         if args.teacher_path.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -657,6 +657,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
