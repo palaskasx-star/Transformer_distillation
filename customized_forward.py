@@ -84,7 +84,7 @@ def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -
                     block_outs.append([])
     else:
         # Standard path for non-mixed mode
-        for blk in self.blocks:
+        for idx, blk in enumerate(self.blocks):
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 x = checkpoint(blk, x, rope=rot_pos_embed)
                 if idx in self.out_indices:
@@ -140,7 +140,7 @@ def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor
     block_outs = []
     if attn_mask is not None:
         # If mask provided, we need to apply blocks one by one
-        for blk in self.blocks:
+        for idx, blk in enumerate(self.blocks):
             x = blk(x, attn_mask=attn_mask)
             if idx in self.out_indices:
                 cls_t = x[:, 0:1] 
@@ -159,7 +159,7 @@ def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor
         else:
             block_outs.append([])
     else:
-        for blk in self.blocks:
+        for idx, blk in enumerate(self.blocks):
             x = blk(x)
             if idx in self.out_indices:
                 cls_t = x[:, 0:1] 
@@ -266,4 +266,5 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
 
