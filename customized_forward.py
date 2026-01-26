@@ -33,7 +33,7 @@ def register_forward(model, model_name):
         model.forward = MethodType(dinov3_forward, model)
     else:
         raise RuntimeError(f'Not defined customized method forward for model {model_name}')
-        
+
     if out_indices is not None:
         model.out_indices = set(out_indices)
     else:
@@ -65,19 +65,20 @@ def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -
         for i, blk in enumerate(self.blocks):
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 x = checkpoint(blk, x, rope=rot_pos_embed[i])
-                cls_t = x[:, 0:1] 
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
                 if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
                     block_outs.append(combined.clone())
                 else:
                     block_outs.append([])
+
             else:
                 x = blk(x, rope=rot_pos_embed[i])
-                cls_t = x[:, 0:1] 
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
                 if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
                     block_outs.append(combined.clone())
                 else:
                     block_outs.append([])
@@ -86,23 +87,24 @@ def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -
         for blk in self.blocks:
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 x = checkpoint(blk, x, rope=rot_pos_embed)
-                cls_t = x[:, 0:1] 
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
                 if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
                     block_outs.append(combined.clone())
                 else:
                     block_outs.append([])
             else:
                 x = blk(x, rope=rot_pos_embed)
-                cls_t = x[:, 0:1]
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
                 if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
                     block_outs.append(combined.clone())
                 else:
                     block_outs.append([])
-    
+
+
     x = self.norm(x)
     
     return x, block_outs
@@ -125,7 +127,12 @@ def dinov3_forward(self, x: torch.Tensor, require_feat: bool = False) -> torch.T
 # deit & vit
 def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None, require_feat: bool = False) -> torch.Tensor:
     """Forward pass through feature layers (embeddings, transformer blocks, post-transformer norm)."""
-      
+    num_reg = self.reg_token
+    if num_reg == None:
+        num_reg = 0
+    else:
+        num_reg = self.reg_token.shape[1]
+    
     x = self.patch_embed(x)
     x = self._pos_embed(x)
     x = self.patch_drop(x)
@@ -136,22 +143,31 @@ def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor
         for blk in self.blocks:
             x = blk(x, attn_mask=attn_mask)
             if idx in self.out_indices:
-                block_outs.append(x)
+                cls_t = x[:, 0:1] 
+                patch_t = x[:, 1+num_reg:] 
+                combined = torch.cat([cls_t, patch_t], dim=1)
+                block_outs.append(combined.clone())
             else:
                 block_outs.append([])
     elif self.grad_checkpointing and not torch.jit.is_scripting():
         x = checkpoint_seq(self.blocks, x)
         if idx in self.out_indices:
-            block_outs.append(x)
+            cls_t = x[:, 0:1] 
+            patch_t = x[:, 1+num_reg:] 
+            combined = torch.cat([cls_t, patch_t], dim=1)
+            block_outs.append(combined.clone())
         else:
             block_outs.append([])
     else:
         for blk in self.blocks:
             x = blk(x)
             if idx in self.out_indices:
-                block_outs.append(x)
+                cls_t = x[:, 0:1] 
+                patch_t = x[:, 1+num_reg:] 
+                combined = torch.cat([cls_t, patch_t], dim=1)
+                block_outs.append(combined.clone())
             else:
-                block_outs.append([]))
+                block_outs.append([])
 
     x = self.norm(x)
     return x, block_outs
@@ -250,5 +266,3 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
-
-
