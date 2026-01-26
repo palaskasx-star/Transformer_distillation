@@ -18,7 +18,7 @@ import torch
 from typing import Optional
 
 
-def register_forward(model, model_name):
+def register_forward(model, model_name, out_indices ):
     if model_name.split('_')[0] == 'deit' or model_name.split('_')[0] == 'deit3':
         model.forward_features = MethodType(vit_forward_features, model)
         model.forward = MethodType(vit_forward, model)
@@ -266,3 +266,4 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
