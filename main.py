@@ -297,7 +297,7 @@ def main(args):
         drop_rate=args.drop,
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
-        reg_tokens=0
+        reg_tokens=args.reg_tokens
     )
     register_forward(model, args.model)
 
@@ -657,6 +657,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
