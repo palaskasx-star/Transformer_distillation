@@ -109,7 +109,7 @@ def get_args_parser():
                         help='LR decay rate (default: 0.1)')
 
     # Augmentation parameters
-    parser.add_argument('--color-jitter', type=float, default=0.4, metavar='PCT',
+    parser.add_argument('--color-jitter', type=float, default=0.3, metavar='PCT',
                         help='Color jitter factor (default: 0.4)')
     parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
                         help='Use AutoAugment policy. "v0" or "original". " + \
@@ -279,7 +279,7 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
+    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_cj_{args.color_jitter}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
     if args.use_prototypes:
         extra_info += f"_prototypes_{args.prototypes_number}"
     output_dir = output_dir / extra_info
@@ -460,7 +460,6 @@ def main(args):
                 projector_list.append(projector)
                 
             if args.delta == 0.0:
-                print("NOOOOOOOOOOOOOOOOOO DDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLLLTTTTTTTTTTTTAAAAAAAAAAAAAAAAA")
                 proto_list.append(None)
                 projector_list.append(None)
             else:
@@ -654,6 +653,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
