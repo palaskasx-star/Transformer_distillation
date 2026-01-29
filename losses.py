@@ -16,6 +16,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 import torch.distributed as dist
 
+from utils import get_distillation_indexes
+
 
 class DistillationLoss(nn.Module):
     """
@@ -49,10 +51,13 @@ class DistillationLoss(nn.Module):
 
         self.world_size = args.world_size
 
+        self.PLD = args.PLD
+        self.epochs = args.epochs
+
         self.KoLeoData = KoLeoLossData()
         self.KoLeoPrototypes = KoLeoLossPrototypes()
 
-    def forward(self, inputs, outputs, labels):
+    def forward(self, inputs, outputs, labels, epoch=None):
         """
         Args:
             inputs: The original inputs that are feed to the teacher model
@@ -94,14 +99,62 @@ class DistillationLoss(nn.Module):
 
         loss_base = base_loss
         loss_dist = distillation_loss
-        loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
-                                  self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance,
-                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, delta=self.delta)  # manifold distillation loss
+        loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(
+            block_outs_s, 
+            block_outs_t, 
+            self.layer_ids_s,
+            self.layer_ids_t, 
+            self.K, 
+            normalize=self.normalize, 
+            distance=self.distance,
+            prototypes=self.prototypes, 
+            projectors_nets=self.projectors_nets, 
+            KoLeoData=self.KoLeoData, 
+            KoLeoPrototypes=self.KoLeoPrototypes, 
+            world_size=self.world_size, 
+            beta=self.beta, 
+            gamma=self.gamma, 
+            delta=self.delta,
+            PLD = self.PLD, 
+            total_epochs=self.epochs, 
+            epoch=epoch)  # manifold distillation loss
 
         return loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, KoLeoData=None, KoLeoPrototypes=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0):
+
+
+
+def mf_loss(block_outs_s, 
+            block_outs_t, 
+            layer_ids_s, 
+            layer_ids_t, 
+            K, 
+            max_patch_num=0, 
+            normalize=False, 
+            distance='MSE', 
+            prototypes=None, 
+            projectors_nets=None, 
+            KoLeoData=None, 
+            KoLeoPrototypes=None, 
+            world_size=1, 
+            beta=0.0, 
+            gamma=0.0, 
+            delta=0.0, 
+            PLD=False, 
+            total_epochs=None, 
+            epoch=None
+            ):
+
+    if PLD:
+        number_layers_distill = len(layer_ids_s)
+
+        total_layers_student = len(block_outs_s)
+        layer_ids_s = get_distillation_indexes(epoch, total_epochs, total_layers_student, number_layers_distill)
+
+        total_layers_tescher = len(block_outs_s)
+        layer_ids_t = get_distillation_indexes(epoch, total_epochs, total_layers_tescher, number_layers_distill)
+
     losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_data = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_proto = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
@@ -521,6 +574,7 @@ class KoLeoLossPrototypes(nn.Module):
             distances = self.pdist(student_output, student_output[I])  # BxD, BxD -> B
             loss = -torch.log(distances + eps).mean()
         return loss
+
 
 def DKD_loss(logit_s, logit_t, gt_label, temp=1, gamma=1):
     
