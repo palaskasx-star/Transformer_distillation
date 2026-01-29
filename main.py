@@ -208,6 +208,8 @@ def get_args_parser():
 
     parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
                 help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
+
+    parser.add_argument('--PLD', action='store_true')
     
     return parser
 
@@ -653,16 +655,3 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
-
-
-
-
-
-
-
-
-
-
-
-
-
