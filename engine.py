@@ -23,7 +23,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
-                    writer=None, args=None, set_training_mode=True):
+                    writer=None, args=None, set_training_mode=True, PLD=False, total_epochs=None):
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -40,7 +40,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             # loss = criterion(samples, outputs, targets)
-            loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = criterion(samples, outputs, targets)
+            loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = criterion(samples, outputs, targets, epoch)
             loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.distillation_beta*(loss_mf_cls + args.KoLeoData*loss_KoLeo_cls_data + args.KoLeoPrototypes*loss_KoLeo_cls_proto) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
       
         loss_value = loss.item()
@@ -116,7 +116,7 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
             output = model(images, require_feat=True)
             loss = criterion(output[0], target)
             target_onehot = torch.zeros_like(output[0]).scatter_(1, target.unsqueeze(1), 1)
-            loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = criterion_dist(images, output, target_onehot)
+            loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = criterion_dist(images, output, target_onehot, epoch)
 
         acc1, acc5 = accuracy(output[0], target, topk=(1, 5))
 
