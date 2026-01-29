@@ -93,7 +93,8 @@ class DistillationLoss(nn.Module):
             ) * (T * T)
         elif self.distillation_type == 'DKD':
             T = self.tau
-            distillation_loss = DKD_loss(outputs_kd, teacher_outputs, labels, temp=T, gamma=1)
+            distillation_loss = 2*DKD_loss(outputs_kd, teacher_outputs, labels, temp=T, gamma=1)
+            base_loss = 2*base_loss
         elif self.distillation_type == 'hard':
             distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
 
