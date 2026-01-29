@@ -27,7 +27,7 @@ class DistillationLoss(nn.Module):
         super().__init__()
         self.base_criterion = base_criterion
         self.teacher_model = teacher_model
-        assert args.distillation_type in ['none', 'soft', 'hard']
+        assert args.distillation_type in ['none', 'soft', 'hard', 'DKD']
         self.distillation_type = args.distillation_type
         self.tau = args.distillation_tau
 
@@ -86,6 +86,9 @@ class DistillationLoss(nn.Module):
                 reduction='batchmean',
                 log_target=True
             ) * (T * T)
+        elif self.distillation_type == 'DKD':
+            T = self.tau
+            distillation_loss = DKD_loss(outputs_kd, teacher_outputs, labels, temp=T, gamma=1)
         elif self.distillation_type == 'hard':
             distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
 
@@ -726,3 +729,33 @@ class KoLeoLossPrototypes(nn.Module):
             distances = self.pdist(student_output, student_output[I])  # BxD, BxD -> B
             loss = -torch.log(distances + eps).mean()
         return loss
+
+def DKD_loss(logit_s, logit_t, gt_label, temp=1, gamma=1):
+    
+    if len(gt_label.size()) > 1:
+        label = torch.max(gt_label, dim=1, keepdim=True)[1]
+    else:
+        label = gt_label.view(len(gt_label), 1)
+
+    # N*class
+    N, c = logit_s.shape
+    s_i = F.log_softmax(logit_s, dim=1)
+    t_i = F.softmax(logit_t, dim=1)
+    # N*1
+    s_t = torch.gather(s_i, 1, label)
+    t_t = torch.gather(t_i, 1, label).detach()
+
+    loss_t = - (t_t * s_t).mean()
+
+    mask = torch.ones_like(logit_s).scatter_(1, label, 0).bool()
+    logit_s = logit_s[mask].reshape(N, -1)
+    logit_t = logit_t[mask].reshape(N, -1)
+    
+    # N*class
+    S_i = F.log_softmax(logit_s/temp, dim=1)
+    T_i = F.softmax(logit_t/temp, dim=1)     
+
+    loss_non =  (T_i * S_i).sum(dim=1).mean()
+    loss_non = - gamma * (temp**2) * loss_non
+
+    return loss_t + loss_non 
