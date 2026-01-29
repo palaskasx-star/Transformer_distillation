@@ -150,7 +150,7 @@ def get_args_parser():
     parser.add_argument('--teacher-model', default='cait_s24_224', type=str, metavar='MODEL',
                         help='Name of teacher model to train')
     parser.add_argument('--teacher-path', type=str, default='')
-    parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard'], type=str, help="")
+    parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard', 'DKD'], type=str, help="")
     parser.add_argument('--distillation-alpha', default=0.5, type=float, help="")
     parser.add_argument('--distillation-tau', default=1.0, type=float, help="")
 
@@ -653,6 +653,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
