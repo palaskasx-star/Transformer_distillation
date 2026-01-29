@@ -14,6 +14,8 @@ import datetime
 import torch
 import torch.distributed as dist
 
+import math
+
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -258,3 +260,32 @@ def init_distributed_mode(args):
         torch.distributed.barrier()
 
     setup_for_distributed(args.rank == 0)
+
+def get_distillation_indexes(current_epoch, total_epochs, total_layers, n_layers):
+    """
+    Returns a list of layer indexes to distill for the current epoch.
+    
+    Args:
+        current_epoch (int): The current training epoch (0-indexed).
+        total_epochs (int): Total duration of training.
+        total_layers (int): Total number of layers in the model (L).
+        n_layers (int): Number of layers to distill at a time (n).
+        
+    Returns:
+        list: A list of integers representing the active layer indexes.
+    """
+
+    num_stages = math.ceil(total_layers / n_layers)
+    
+
+    epochs_per_stage = max(1, total_epochs // num_stages)
+    
+    current_stage = current_epoch // epochs_per_stage
+    
+    if current_stage >= num_stages:
+        current_stage = num_stages - 1
+        
+    start_index = current_stage * n_layers
+    end_index = min(start_index + n_layers, total_layers)
+    
+    return list(range(start_index, end_index))
