@@ -23,7 +23,7 @@ class DistillationLoss(nn.Module):
     taking a teacher model prediction and using it as additional supervision.
     """
 
-    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, prototypes: None, projectors_nets: None, args):
+    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, prototypes: None, projectors_nets: None, abfs: None, args):
         super().__init__()
         self.base_criterion = base_criterion
         self.teacher_model = teacher_model
@@ -42,6 +42,7 @@ class DistillationLoss(nn.Module):
 
         self.prototypes = prototypes
         self.projectors_nets = projectors_nets
+        self.abfs = abfs
 
         self.beta = args.distillation_beta
         self.gamma = args.gamma
@@ -95,14 +96,17 @@ class DistillationLoss(nn.Module):
 
         loss_base = base_loss
         loss_dist = distillation_loss
-        loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
-                                  self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance,
-                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, delta=self.delta)  # manifold distillation loss
+        loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, 
+                                  self.layer_ids_s, self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance,
+                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, abfs=self.abfs, abfs KoLeoData=self.KoLeoData, 
+                                  KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, 
+                                  delta=self.delta
+                                 )  # manifold distillation loss
 
         return loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, KoLeoData=None, KoLeoPrototypes=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, abfs=None, KoLeoData=None, KoLeoPrototypes=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0):
     losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_data = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_proto = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
@@ -110,6 +114,17 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         F_s = block_outs_s[id_s]
         F_t = block_outs_t[id_t]
+
+        if abfs is not None:
+                x = feats_s[::-1]
+                abfs_reversed = abfs[::-1] 
+                results = []
+                out_features, res_features = abfs_reversed[0](x[0])
+                results.append(out_features)
+                for idx in range(1, len(x)):
+                    out_features, res_features = abfs_reversed[idx](x[idx], res_features)
+                    results.insert(0, out_features)
+                feats_s = results
 
         dev = F_t.device
 
