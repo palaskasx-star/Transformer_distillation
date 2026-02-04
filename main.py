@@ -438,7 +438,7 @@ def main(args):
             # Replicating ParamAttr(initializer=KaimingNormal())
             torch.nn.init.kaiming_normal_(self.proj.weight, mode='fan_out', nonlinearity='relu')
 
-            self.conv2_bn = torch.nn.BatchNorm2d(teacher_dim)
+            #self.conv2_bn = torch.nn.BatchNorm2d(teacher_dim)
             
             if fuse:
                 self.att_conv = torch.nn.Sequential(
@@ -710,6 +710,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
