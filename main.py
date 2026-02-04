@@ -375,7 +375,7 @@ def main(args):
         teacher_model.to(device)
         teacher_model.eval()
 
-
+    """
     class ABF(torch.nn.Module):
         def __init__(self, student_dim, teacher_dim, fuse):
             super(ABF, self).__init__()
@@ -428,7 +428,53 @@ def main(args):
             x = x.transpose(1, 2)
 
             return y, x
-        
+    """
+    class ABF(torch.nn.Module):
+        def __init__(self, student_dim, teacher_dim, fuse):
+            super(ABF, self).__init__()
+            
+            self.proj = torch.nn.Linear(student_dim, teacher_dim, bias=False)
+
+            # Replicating ParamAttr(initializer=KaimingNormal())
+            torch.nn.init.kaiming_normal_(self.proj.weight, mode='fan_out', nonlinearity='relu')
+
+            self.conv2_bn = torch.nn.BatchNorm2d(teacher_dim)
+            
+            if fuse:
+                self.att_conv = torch.nn.Sequential(
+                    torch.nn.Conv2d(student_dim * 2, 2, kernel_size=1),
+                    torch.nn.Sigmoid(),
+                )
+            else:
+                self.att_conv = None
+
+        def forward(self, x, y=None):
+            # x shape: [N, L, C]
+            N, L, C = x.shape
+            
+            H = int(L ** 0.5) 
+            W = H
+            x = x.transpose(1, 2).reshape(N, C, H, W)
+
+            if y is not None:
+                # Apply same reshape to the deep context features
+                y = y.reshape(N, C, H, W)
+
+            if self.att_conv is not None:
+
+                z = torch.cat([x, y], dim=1)
+                z = self.att_conv(z)
+                
+                x = (x * z[:, 0].unsqueeze(1) + y * z[:, 1].unsqueeze(1))
+                
+            x = x.flatten(2)
+                        
+            x = x.transpose(1, 2)
+
+            y = self.proj(x)
+
+            return y, x
+            
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, abfs):
             super().__init__()
@@ -664,5 +710,6 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
