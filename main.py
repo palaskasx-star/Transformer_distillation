@@ -376,9 +376,62 @@ def main(args):
         teacher_model.eval()
 
 
-    class ProtoProjectorWrapper(torch.nn.Module):
-        def __init__(self, prototypes, projectors):
+    class ABF(nn.Layer):
+        def __init__(self, student_dims, teacher_dims, fuse):
             super().__init__()
+    
+            self.conv2 = nn.Conv2D(
+                student_dims,
+                teacher_dims,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias_attr=False,
+                weight_attr=ParamAttr(initializer=KaimingNormal()))
+            self.conv2_bn = nn.BatchNorm2D(teacher_dims)
+            if fuse:
+                self.att_conv = nn.Sequential(
+                    nn.Conv2D(
+                        mid_channel * 2, 2, kernel_size=1),
+                    nn.Sigmoid(), )
+            else:
+                self.att_conv = None
+    
+        def forward(self, x, y=None, shape=None):
+            N, L, C = x.shape
+            H = int(L ** 0.5) # Calculate spatial size (e.g., sqrt(196) = 14)
+            W = H
+            
+            # Transpose [N, L, C] -> [N, C, L] -> Reshape [N, C, H, W]
+            x = x.transpose([0, 2, 1]).reshape([N, C, H, W])
+    
+            if y is not None:
+                # Apply same reshape to the deep context features
+                y = y.transpose([0, 2, 1]).reshape([N, C, H, W])
+    
+            if self.att_conv is not None:
+                # upsample residual features
+                y = F.interpolate(y, (shape, shape), mode="nearest")
+                # fusion
+                z = paddle.concat([x, y], axis=1)
+                z = self.att_conv(z)
+                x = (x * z[:, 0].reshape([N, 1, H, W]) + y * z[:, 1].reshape(
+                    [N, 1, H, W]))
+            y = self.conv2(x)
+    
+            y = y.flatten(2)
+            x = x.flatten(2)
+            
+            y = y.transpose([0, 2, 1])
+            x = x.transpose([0, 2, 1])
+    
+            return y, x
+        
+    class ProtoProjectorWrapper(torch.nn.Module):
+        def __init__(self, prototypes, projectors, abfs):
+            super().__init__()
+            self.abfs = torch.nn.ModuleList(abfs)
+            
             # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
             self.prototypes = torch.nn.ModuleList()
             self.projectors = torch.nn.ModuleList()
@@ -405,9 +458,14 @@ def main(args):
 
         prototypes = []
         projectors_nets = []
+        abfs = []
+        
         for i, feat in enumerate(args.s_id):
             feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
             feature_dim_student = features_student[args.s_id[i]].shape[2]
+
+            abf = ABF(student_dim=dim_student, teacher_dim=dim_teacher, fuse=True)
+            abfs.append(abf.to(device))
 
             # Create 3 prototype matrices and 3 projectors for each i
             proto_list = []
@@ -485,11 +543,12 @@ def main(args):
             prototypes.append(proto_list)
             projectors_nets.append(projector_list)
 
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
+        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets, abfs).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
     else:
         prototypes = []
         projectors_nets = []
+        abfs = []
         for i, feat in enumerate(args.s_id):
             proto_list = []
             projector_list = []
@@ -498,8 +557,9 @@ def main(args):
                 projector_list.append(None)
             prototypes.append(proto_list)
             projectors_nets.append(projector_list)
+            abfs.append([])
 
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
+        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets, abfs).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
 
 
@@ -537,7 +597,7 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, model.module.proto_proj_module.prototypes, model.module.proto_proj_module.projectors, args)
+    criterion = DistillationLoss(criterion, teacher_model, model.module.proto_proj_module.prototypes, model.module.proto_proj_module.projectors, model.module.proto_proj_module.abfs, args)
 
 
     #output_dir = Path(args.output_dir)
@@ -653,6 +713,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
