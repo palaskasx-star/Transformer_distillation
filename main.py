@@ -550,7 +550,7 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, model.proto_proj_module.module.prototypes, model.proto_proj_module.module.abfs, args)
+    criterion = DistillationLoss(criterion, teacher_model, model.module.proto_proj_module.prototypes, model.module.proto_proj_module.abfs, args)
 
 
     #output_dir = Path(args.output_dir)
@@ -666,3 +666,4 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
