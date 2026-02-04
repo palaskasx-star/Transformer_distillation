@@ -278,9 +278,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     with torch.no_grad():
         prototypes.protos[2].copy_(F.normalize(prototypes.protos[2], dim=1))
 
-    F_s = F_s[:, 1:, :].clone()  # select only the cls token
-    F_t = F_t[:, 1:, :].clone()  # select only the cls token
-
     # manifold loss among random sampled patches
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
