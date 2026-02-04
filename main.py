@@ -376,76 +376,74 @@ def main(args):
         teacher_model.eval()
 
 
-    class ABF(nn.Layer):
-        def __init__(self, student_dims, teacher_dims, fuse):
-            super().__init__()
-    
-            self.conv2 = nn.Conv2D(
-                student_dims,
-                teacher_dims,
+    class ABF(torch.nn.Module):
+        def __init__(self, student_dim, teacher_dim, fuse):
+            super(ABF, self).__init__()
+            
+            self.conv2 = torch.nn.Conv2d(
+                in_channels=student_dim,
+                out_channels=teacher_dim,
                 kernel_size=3,
                 stride=1,
                 padding=1,
-                bias_attr=False,
-                weight_attr=ParamAttr(initializer=KaimingNormal()))
-            self.conv2_bn = nn.BatchNorm2D(teacher_dims)
+                bias=False
+            )
+            
+            # Replicating ParamAttr(initializer=KaimingNormal())
+            torch.nn.init.kaiming_normal_(self.conv2.weight, mode='fan_out', nonlinearity='relu')
+
+            self.conv2_bn = torch.nn.BatchNorm2d(teacher_dim)
+            
             if fuse:
-                self.att_conv = nn.Sequential(
-                    nn.Conv2D(
-                        mid_channel * 2, 2, kernel_size=1),
-                    nn.Sigmoid(), )
+                self.att_conv = torch.nn.Sequential(
+                    torch.nn.Conv2d(student_dim * 2, 2, kernel_size=1),
+                    torch.nn.Sigmoid(),
+                )
             else:
                 self.att_conv = None
-    
-        def forward(self, x, y=None, shape=None):
+
+        def forward(self, x, y=None):
+            # x shape: [N, L, C]
             N, L, C = x.shape
-            H = int(L ** 0.5) # Calculate spatial size (e.g., sqrt(196) = 14)
-            W = H
             
-            # Transpose [N, L, C] -> [N, C, L] -> Reshape [N, C, H, W]
-            x = x.transpose([0, 2, 1]).reshape([N, C, H, W])
-    
+            H = int(L ** 0.5) 
+            W = H
+            x = x.transpose(1, 2).reshape(N, C, H, W)
+
             if y is not None:
                 # Apply same reshape to the deep context features
-                y = y.transpose([0, 2, 1]).reshape([N, C, H, W])
-    
+                y = y.reshape(N, C, H, W)
+
             if self.att_conv is not None:
-                # upsample residual features
-                y = F.interpolate(y, (shape, shape), mode="nearest")
-                # fusion
-                z = paddle.concat([x, y], axis=1)
+
+                z = torch.cat([x, y], dim=1)
                 z = self.att_conv(z)
-                x = (x * z[:, 0].reshape([N, 1, H, W]) + y * z[:, 1].reshape(
-                    [N, 1, H, W]))
+                
+                x = (x * z[:, 0].unsqueeze(1) + y * z[:, 1].unsqueeze(1))
+                
             y = self.conv2(x)
-    
+            
             y = y.flatten(2)
             x = x.flatten(2)
-            
-            y = y.transpose([0, 2, 1])
-            x = x.transpose([0, 2, 1])
-    
+                        
+            y = y.transpose(1, 2)
+            x = x.transpose(1, 2)
+
             return y, x
         
     class ProtoProjectorWrapper(torch.nn.Module):
-        def __init__(self, prototypes, projectors, abfs):
+        def __init__(self, prototypes, abfs):
             super().__init__()
             self.abfs = torch.nn.ModuleList(abfs)
             
             # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
             self.prototypes = torch.nn.ModuleList()
-            self.projectors = torch.nn.ModuleList()
 
-            for proto_list, proj_list in zip(prototypes, projectors):
+            for proto_list  in prototypes:
                 # Wrap each group of 3 prototypes in a submodule with ParameterList
                 proto_module = torch.nn.Module()
                 proto_module.protos = torch.nn.ParameterList(proto_list)
                 self.prototypes.append(proto_module)
-
-                # Wrap each group of 3 projectors in a submodule with ModuleList
-                proj_module = torch.nn.Module()
-                proj_module.projs = torch.nn.ModuleList(proj_list)
-                self.projectors.append(proj_module)
 
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
@@ -457,22 +455,19 @@ def main(args):
             _, features_student = model(images)
 
         prototypes = []
-        projectors_nets = []
         abfs = []
         
         for i, feat in enumerate(args.s_id):
             feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
             feature_dim_student = features_student[args.s_id[i]].shape[2]
 
-            abf = ABF(student_dim=dim_student, teacher_dim=dim_teacher, fuse=True)
+            abf = ABF(student_dim=feature_dim_student, teacher_dim=feature_dim_teacher, fuse=i < len(args.s_id) - 1)
             abfs.append(abf.to(device))
 
             # Create 3 prototype matrices and 3 projectors for each i
             proto_list = []
-            projector_list = []
             if args.gamma == 0.0:
                 proto_list.append(None)
-                projector_list.append(None)
             else:
                 # Initialize prototype with uniform distribution
                 proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
@@ -480,23 +475,10 @@ def main(args):
                 torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
                 proto = torch.nn.Parameter(proto)
                 proto_list.append(proto)
-
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                projector_list.append(projector)
 
             
             if args.distillation_beta == 0.0:
                 proto_list.append(None)
-                projector_list.append(None)
             else:
                 # Initialize prototype with uniform distribution
                 proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
@@ -504,22 +486,9 @@ def main(args):
                 torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
                 proto = torch.nn.Parameter(proto)
                 proto_list.append(proto)
-
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                projector_list.append(projector)
                 
             if args.delta == 0.0:
                 proto_list.append(None)
-                projector_list.append(None)
             else:
                 # Initialize prototype with uniform distribution
                 proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
@@ -528,38 +497,22 @@ def main(args):
                 proto = torch.nn.Parameter(proto)
                 proto_list.append(proto)
 
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                projector_list.append(projector)
 
             prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
 
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets, abfs).to(device)
+        proto_proj_module = ProtoProjectorWrapper(prototypes, abfs).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
     else:
         prototypes = []
-        projectors_nets = []
         abfs = []
         for i, feat in enumerate(args.s_id):
             proto_list = []
-            projector_list = []
             for j in range(3):
                 proto_list.append(None)
-                projector_list.append(None)
             prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
             abfs.append([])
 
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets, abfs).to(device)
+        proto_proj_module = ProtoProjectorWrapper(prototypes, abfs).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
 
 
@@ -597,7 +550,7 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, model.module.proto_proj_module.prototypes, model.module.proto_proj_module.projectors, model.module.proto_proj_module.abfs, args)
+    criterion = DistillationLoss(criterion, teacher_model, model.proto_proj_module.module.prototypes, model.proto_proj_module.module.abfs, args)
 
 
     #output_dir = Path(args.output_dir)
@@ -713,17 +666,3 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
