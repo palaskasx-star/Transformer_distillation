@@ -433,6 +433,7 @@ def main(args):
                     ).to(device)
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                    projector = torch.nn.utils.parametrizations.orthogonal(linear_layer)
                 projector_list.append(projector)
 
             
@@ -457,6 +458,7 @@ def main(args):
                     ).to(device)
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                    projector = torch.nn.utils.parametrizations.orthogonal(linear_layer)
                 projector_list.append(projector)
                 
             if args.delta == 0.0:
@@ -480,6 +482,7 @@ def main(args):
                     ).to(device)
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                    projector = torch.nn.utils.parametrizations.orthogonal(linear_layer)
                 projector_list.append(projector)
 
             prototypes.append(proto_list)
@@ -653,6 +656,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
