@@ -271,7 +271,7 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=1, world_size=1):
     """
     prototypes = F.normalize(prototypes, dim=-1, p=2)
     """
@@ -282,26 +282,24 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
-
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
+    
+    f_s = projectors_net.projs[2](f_s)
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
+        prototypes.protos[2] = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=1, keepdim=True)) / (prototypes.protos[2].std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net.projs[2](f_s)
 
-    f_s = F.normalize(f_s, dim=-1, p=2)
-    f_t = F.normalize(f_t, dim=-1, p=2)
+    #loss_KoLeo_rand_data = KoLeoData(f_s)
+    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
-    loss_KoLeo_rand_data = KoLeoData(f_s)
-    loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
-
-    M_s = f_s @ prototypes.protos[2].t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, world_size=world_size).detach()
-    M_t = f_t @ prototypes.protos[2].t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3, world_size=world_size).detach()
+    M_s = gaussian_kernel(f_s.squeeze(), prototypes.protos[2]) 
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
+    M_t = gaussian_kernel(f_t.squeeze(), prototypes.protos[2])
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
@@ -311,7 +309,10 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
 
     loss_mf_rand = (loss12 + loss21)/2
 
-    return loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto
+    dev = loss_mf_rand.device
+
+    return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+
 
 def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     """
@@ -363,22 +364,21 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
     f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
 
+    f_s = projectors_net.projs[1](f_s)
+
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
+        prototypes.protos[2] = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=1, keepdim=True)) / (prototypes.protos[2].std(dim=1, keepdim=True) + eps))
 
-    f_s = projectors_net.projs[1](f_s)
 
-    f_s = F.normalize(f_s, dim=-1, p=2)
-    f_t = F.normalize(f_t, dim=-1, p=2)
+    #loss_KoLeo_rand_data = KoLeoData(f_s)
+    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
-    loss_KoLeo_cls_data = KoLeoData(f_s)
-    loss_KoLeo_cls_proto = KoLeoPrototypes( prototypes.protos[1])
-    
-    M_s = f_s @ prototypes.protos[1].t()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, world_size=world_size).detach()
-    M_t = f_t @ prototypes.protos[1].t()
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3, world_size=world_size).detach()
+    M_s = gaussian_kernel(f_s.squeeze(), prototypes.protos[1]) 
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
+    M_t = gaussian_kernel(f_t.squeeze(), prototypes.protos[1])
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
@@ -386,10 +386,11 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
     loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_cls = (loss12 + loss21)/2
+    loss_mf_rand = (loss12 + loss21)/2
 
-    return loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto
+    dev = loss_mf_rand.device
 
+    return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 def merge(x, max_patch_num=196):
     B, P, C = x.shape
@@ -411,7 +412,6 @@ def sinkhorn(out, nmb_iters=3, epsilon=0.05):
     """
     T, B, K = out.shape
     Q = torch.exp(out / epsilon).permute(0, 2, 1)  # T x K x B
-
 
     Q /= Q.sum(dim=(1, 2), keepdim=True)    # normalize
 
@@ -451,6 +451,19 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
 
     Q *= B # the colomns must sum to 1 so that Q is an assignment
     return Q.permute(0, 2, 1)
+
+def cosine_kernel(x,p):
+    x = F.normalize(x, p=2, dim=1)  # Normalize vectors
+    p = F.normalize(p, p=2, dim=1)  # Normalize vectors
+    cosine_simmilarity = torch.mm(x, p.t())# Cosine similarity kernel
+    cosine_simmilarity = cosine_simmilarity.unsqueeze(0)
+    return cosine_simmilarity
+
+def gaussian_kernel(x,p):
+    dist = torch.cdist(x, p, p=2)  # Shape: (n, n)
+    dist_sq = dist.pow(2) / x.shape[1]  # Mean squared distance over dimensions
+    dist_sq = (dist_sq - dist_sq.mean()).unsqueeze(0)
+    return dist_sq
 
 
 class KoLeoLossData(nn.Module):
