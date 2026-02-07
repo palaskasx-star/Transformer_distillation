@@ -372,8 +372,8 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
         prototypes.protos[2] = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=1, keepdim=True)) / (prototypes.protos[2].std(dim=1, keepdim=True) + eps))
 
 
-    #loss_KoLeo_rand_data = KoLeoData(f_s)
-    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
+    loss_KoLeo_rand_data = KoLeoData(f_s)
+    loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
     M_s = gaussian_kernel(f_s.squeeze(), prototypes.protos[1]) 
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
@@ -390,7 +390,7 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
 
     dev = loss_mf_rand.device
 
-    return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+    return loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto
 
 def merge(x, max_patch_num=196):
     B, P, C = x.shape
