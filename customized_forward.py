@@ -127,17 +127,18 @@ def dinov3_forward(self, x: torch.Tensor, require_feat: bool = False) -> torch.T
 # deit & vit
 def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None, require_feat: bool = False) -> torch.Tensor:
     """Forward pass through feature layers (embeddings, transformer blocks, post-transformer norm)."""
-    block_outs = []
-
     x = self.patch_embed(x)
-    block_outs.append(x)
     x = self._pos_embed(x)
     x = self.patch_drop(x)
     x = self.norm_pre(x)
-    
+    block_outs = []
+
     for idx, blk in enumerate(self.blocks):
         x = blk(x)
-        block_outs.append(x)
+        if idx in self.out_indices:
+            block_outs.append(x)
+        else:
+            block_outs.append([])
 
     x = self.norm(x)
     return x, block_outs
