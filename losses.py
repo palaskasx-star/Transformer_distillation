@@ -271,7 +271,7 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=1, world_size=1):
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     """
     prototypes = F.normalize(prototypes, dim=-1, p=2)
     """
@@ -297,9 +297,9 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
     M_s = gaussian_kernel(f_s, protos_norm) + cosine_kernel(f_s, protos_norm)
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=1, world_size=world_size).detach()
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     M_t = gaussian_kernel(f_t, protos_norm) + cosine_kernel(f_t, protos_norm)
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=1, world_size=world_size).detach()
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     p1 = F.softmax(M_s / temperature, dim=2)
     p2 = F.softmax(M_t / temperature, dim=2)
