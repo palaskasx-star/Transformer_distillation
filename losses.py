@@ -341,8 +341,8 @@ def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE',
     f_s = F.normalize(f_s, dim=-1, p=2)
     f_t = F.normalize(f_t, dim=-1, p=2)
 
-    loss_KoLeo_patch_data = KoLeoData(f_s)
-    loss_KoLeo_patch_proto = KoLeoPrototypes( prototypes.protos[0])
+    #loss_KoLeo_patch_data = KoLeoData(f_s)
+    #loss_KoLeo_patch_proto = KoLeoPrototypes( prototypes.protos[0])
 
     M_s = f_s @ prototypes.protos[0].t()
     q1 = sinkhorn(M_s, nmb_iters=3).detach()
@@ -360,11 +360,13 @@ def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE',
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))2))
+        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
     loss_mf_patch = (loss12 + loss21)/2
 
-    return loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto
+    dev = loss_mf_patch.device
+
+    return loss_mf_patch, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     """
@@ -403,13 +405,13 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))2))
+        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
     loss_mf_cls = (loss12 + loss21)/2
 
     dev = loss_mf_cls.device
 
-    return loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto
+    return loss_mf_cls, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 def merge(x, max_patch_num=196):
     B, P, C = x.shape
