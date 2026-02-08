@@ -302,16 +302,19 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, world_size=world_size).detach()
     M_t = f_t @ prototypes.protos[2].t()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, world_size=world_size).detach()
-    
-    p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
-    
+
     if distance == 'MSE':
+        M_t = (1 + M_t)/2
+        M_s = (1 + M_s)/2
+        p1 = M_s / M_s.sum(dim=-1, keepdim=True)
+        p2 = M_t / M_t.sum(dim=-1, keepdim=True)
         diff12 = q1 - p2
         diff21 = q2 - p1
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        p1 = F.softmax(M_s / temperature, dim=2)
+        p2 = F.softmax(M_t / temperature, dim=2)
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
@@ -348,15 +351,18 @@ def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE',
     q2 = sinkhorn(M_t, nmb_iters=3).detach()
 
 
-    p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
-
     if distance == 'MSE':
+        M_t = (1 + M_t)/2
+        M_s = (1 + M_s)/2
+        p1 = M_s / M_s.sum(dim=2, keepdim=True)
+        p2 = M_t / M_t.sum(dim=2, keepdim=True)
         diff12 = q1 - p2
         diff21 = q2 - p1
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        p1 = F.softmax(M_s / temperature, dim=2)
+        p2 = F.softmax(M_t / temperature, dim=2)
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
@@ -392,15 +398,18 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     M_t = f_t @ prototypes.protos[1].t()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, world_size=world_size).detach()
 
-    p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
-
     if distance == 'MSE':
+        M_t = (1 + M_t)/2
+        M_s = (1 + M_s)/2
+        p1 = M_s / M_s.sum(dim=2, keepdim=True)
+        p2 = M_t / M_t.sum(dim=2, keepdim=True)
         diff12 = q1 - p2
         diff21 = q2 - p1
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        p1 = F.softmax(M_s / temperature, dim=2)
+        p2 = F.softmax(M_t / temperature, dim=2)
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
