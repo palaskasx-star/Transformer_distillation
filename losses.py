@@ -297,9 +297,9 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
     M_s = gaussian_kernel(f_s, protos_norm)
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=1, world_size=world_size).detach()
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.1, world_size=world_size).detach()
     M_t = gaussian_kernel(f_t, protos_norm)
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=1, world_size=world_size).detach()
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.1, world_size=world_size).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
@@ -432,7 +432,7 @@ def sinkhorn(out, nmb_iters=3, epsilon=0.05):
     Returns: balanced assignments Q (batch_size x n_prototypes)
     """
     T, B, K = out.shape
-    Q = torch.exp(out / epsilon).permute(0, 2, 1)  # T x K x B
+    Q = torch.exp(- out / epsilon).permute(0, 2, 1)  # T x K x B
 
     Q /= Q.sum(dim=(1, 2), keepdim=True)    # normalize
 
@@ -450,7 +450,7 @@ def sinkhorn(out, nmb_iters=3, epsilon=0.05):
 
 @torch.no_grad()
 def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
-    Q = torch.exp(out / epsilon).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
+    Q = torch.exp(- out / epsilon).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
     B = Q.shape[2] * world_size # number of samples to assign
     K = Q.shape[1] # how many prototypes
 
