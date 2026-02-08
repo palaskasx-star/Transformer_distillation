@@ -493,7 +493,7 @@ def cosine_kernel(x,p):
 def gaussian_kernel(x,p):
     dist = torch.cdist(x, p, p=2)  # Shape: (n, n)
     dist_sq = dist.pow(2) / x.shape[1]  # Mean squared distance over dimensions
-    dist_sq = (dist_sq - dist_sq.mean()).unsqueeze(0)
+    dist_sq = dist_sq.unsqueeze(0)
     return dist_sq
 
 
