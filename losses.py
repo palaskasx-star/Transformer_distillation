@@ -432,7 +432,10 @@ def sinkhorn(out, nmb_iters=3, epsilon=0.05):
     Returns: balanced assignments Q (batch_size x n_prototypes)
     """
     T, B, K = out.shape
-    Q = torch.exp(- out / epsilon).permute(0, 2, 1)  # T x K x B
+    exponential = -out / epsilon
+    exponential_max, _ = torch.max(exponential, dim=2, keepdim=True)
+    exponential = exponential - exponential_max
+    Q = torch.exp(exponential).permute(0, 2, 1)  # T x K x B
 
     Q /= Q.sum(dim=(1, 2), keepdim=True)    # normalize
 
@@ -450,7 +453,11 @@ def sinkhorn(out, nmb_iters=3, epsilon=0.05):
 
 @torch.no_grad()
 def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
-    Q = torch.exp(- out / epsilon).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
+    exponential = -out / epsilon
+    exponential_max, _ = torch.max(exponential, dim=2, keepdim=True)
+    exponential = exponential - exponential_max
+    
+    Q = torch.exp(exponential).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
     B = Q.shape[2] * world_size # number of samples to assign
     K = Q.shape[1] # how many prototypes
 
