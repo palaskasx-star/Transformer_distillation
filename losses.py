@@ -301,8 +301,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     M_t = gaussian_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=1, world_size=world_size).detach()
 
-    p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
+    p1 = F.softmax(-M_s / temperature, dim=2)
+    p2 = F.softmax(-M_t / temperature, dim=2)
     
     if distance == 'MSE':
         diff12 = q1 - p2
@@ -395,8 +395,8 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     M_t = gaussian_kernel(f_t, prototypes.protos[1])
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
 
-    p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
+    p1 = F.softmax(-M_s / temperature, dim=2)
+    p2 = F.softmax(-M_t / temperature, dim=2)
     
     if distance == 'MSE':
         diff12 = q1 - p2
