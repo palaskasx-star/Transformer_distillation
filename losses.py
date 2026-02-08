@@ -306,8 +306,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     if distance == 'MSE':
         M_t = (1 + M_t)/2
         M_s = (1 + M_s)/2
-        p1 = M_s / M_s.sum(dim=-1, keepdim=True)
-        p2 = M_t / M_t.sum(dim=-1, keepdim=True)
+        p1 = M_s / M_s.sum(dim=2, keepdim=True)
+        p2 = M_t / M_t.sum(dim=2, keepdim=True)
         diff12 = q1 - p2
         diff21 = q2 - p1
         loss12 = (diff12 * diff12).mean()
