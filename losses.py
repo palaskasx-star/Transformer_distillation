@@ -296,9 +296,9 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
-    M_s = gaussian_kernel(f_s, protos_norm)
+    M_s = L2_dist(f_s, protos_norm)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    M_t = gaussian_kernel(f_t, protos_norm)
+    M_t = L2_dist(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
@@ -390,9 +390,9 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
-    M_s = gaussian_kernel(f_s, prototypes.protos[1]) 
+    M_s = L2_dist(f_s, prototypes.protos[1]) 
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
-    M_t = gaussian_kernel(f_t, prototypes.protos[1])
+    M_t = L2_dist(f_t, prototypes.protos[1])
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.5, world_size=world_size).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
@@ -487,17 +487,14 @@ def cosine_kernel(x,p):
     cosine_simmilarity = cosine_simmilarity.unsqueeze(0)
     return cosine_simmilarity
 
-def gaussian_kernel(x,p):
+def L2_dist(x,p):
     dist = torch.cdist(x, p, p=2)  # Shape: (n, n)
     dist_sq = dist.pow(2) / x.shape[1]  # Mean squared distance over dimensions
     dist_sq = dist_sq.unsqueeze(0)
     return dist_sq
 
-def normalize_mean_std(x):
-    x_norm = (x - x.mean(dim=0, keepdim=True))
-    weights = 1 / ((x.std(dim=0, keepdim=True)**2).sum())
-    sqrt_weights = torch.sqrt(weights).detach()
-    x_norm = x_norm * sqrt_weights * torch.sqrt(torch.tensor(x_norm.shape[1]))
+def normalize_mean_std(x, eps=1e-8):
+    x_norm = (x - x.mean(dim=0, keepdim=True)) /  (f_s.std(dim=0, keepdim=True) + eps)
     return x_norm
 
 class KoLeoLossData(nn.Module):
