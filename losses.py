@@ -497,7 +497,7 @@ def normalize_mean_std(x):
     x_norm = (x - x.mean(dim=0, keepdim=True))
     weights = 1 / ((x.std(dim=0, keepdim=True)**2).sum())
     sqrt_weights = torch.sqrt(weights).detach()
-    x_norm = x_norm * sqrt_weights * torch.sqrt(torch.tensor(x_norm.shape[1], dtype=torch.float64))
+    x_norm = x_norm * sqrt_weights * torch.sqrt(torch.tensor(x_norm.shape[1]))
     return x_norm
 
 class KoLeoLossData(nn.Module):
