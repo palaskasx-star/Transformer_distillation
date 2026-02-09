@@ -503,10 +503,13 @@ class KoLeoLossData(nn.Module):
         self.pdist = nn.PairwiseDistance(2, eps=1e-8)
 
     def pairwise_NNs_inner(self, x):
-        # x is (B, T, feat_dim)
-        dots = torch.bmm(x, x.transpose(1, 2))
-        dots.diagonal(dim1=-2, dim2=-1).fill_(-1)
-        _, I = torch.max(dots, dim=2)
+        """
+        Pairwise nearest neighbors using L2 distance for (B, T, D) tensors.
+        """
+        dists = torch.cdist(x, x, p=2)
+
+        dists.diagonal(dim1=-2, dim2=-1).fill_(float('inf'))
+        _, I = torch.min(dists, dim=2)
 
         return I
 
@@ -547,12 +550,13 @@ class KoLeoLossPrototypes(nn.Module):
         Pairwise nearest neighbors for L2-normalized vectors.
         Uses Torch rather than Faiss to remain on GPU.
         """
-        # parwise dot products (= inverse distance)
-        dots = torch.mm(x, x.t())
+
+        dists = torch.cdist(x, x, p=2) 
+
         n = x.shape[0]
-        dots.view(-1)[:: (n + 1)].fill_(-1)  # Trick to fill diagonal with -1
-        # max inner prod -> min distance
-        _, I = torch.max(dots, dim=1)  # noqa: E741
+        dists.view(-1)[:: (n + 1)].fill_(float('inf'))
+
+        _, I = torch.min(dists, dim=1)
         return I
 
     def forward(self, student_output, eps=1e-8):
