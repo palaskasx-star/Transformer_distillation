@@ -513,7 +513,7 @@ class KoLeoLossData(nn.Module):
 
         return I
 
-    def forward(self, student_output, eps=1e-8):
+    def forward(self, student_output, eps=1e-6):
         # Fix 1: Updated autocast syntax to remove warning
         with torch.amp.autocast('cuda', enabled=False):
             
@@ -559,7 +559,7 @@ class KoLeoLossPrototypes(nn.Module):
         _, I = torch.min(dists, dim=1)
         return I
 
-    def forward(self, student_output, eps=1e-8):
+    def forward(self, student_output, eps=1e-6):
         """
         Args:
             student_output (BxD): backbone output of student
