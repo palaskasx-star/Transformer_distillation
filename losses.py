@@ -288,9 +288,9 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     f_s = projectors_net.projs[2](f_s)
 
     if normalize:
-        f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps)).squeeze()
-        f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps)).squeeze()
-        protos_norm = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=0, keepdim=True)) / (prototypes.protos[2].std(dim=0, keepdim=True) + eps))
+        f_s = normalize_mean_std(f_s.squeeze())
+        f_t = normalize_mean_std(f_t.squeeze())
+        protos_norm = normalize_mean_std(prototypes.protos[2])
 
 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
@@ -493,6 +493,12 @@ def gaussian_kernel(x,p):
     dist_sq = dist_sq.unsqueeze(0)
     return dist_sq
 
+def normalize_mean_std(x):
+    x_norm = (x - x.mean(dim=0, keepdim=True))
+    weights = 1 / ((x.std(dim=0, keepdim=True)**2).sum())
+    sqrt_weights = torch.sqrt(weights).detach()
+    x_norm = x_norm * sqrt_weights * torch.sqrt(torch.tensor(x_norm.shape[1], dtype=torch.float64))
+    return x_norm
 
 class KoLeoLossData(nn.Module):
     def __init__(self):
