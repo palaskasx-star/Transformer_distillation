@@ -494,7 +494,7 @@ def L2_dist(x,p):
     return dist_sq
 
 def normalize_mean_std(x, eps=1e-8):
-    x_norm = (x - x.mean(dim=0, keepdim=True)) /  (f_s.std(dim=0, keepdim=True) + eps)
+    x_norm = (x - x.mean(dim=0, keepdim=True)) /  (x.std(dim=0, keepdim=True) + eps)
     return x_norm
 
 class KoLeoLossData(nn.Module):
