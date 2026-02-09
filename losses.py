@@ -290,7 +290,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps)).squeeze()
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps)).squeeze()
-        protos_norm = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=1, keepdim=True)) / (prototypes.protos[2].std(dim=1, keepdim=True) + eps))
+        protos_norm = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=0, keepdim=True)) / (prototypes.protos[2].std(dim=0, keepdim=True) + eps))
 
 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
@@ -384,7 +384,7 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps)).squeeze()
         f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps)).squeeze()
-        prototypes.protos[2] = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=1, keepdim=True)) / (prototypes.protos[2].std(dim=1, keepdim=True) + eps))
+        prototypes.protos[2] = ((prototypes.protos[2] - prototypes.protos[2].mean(dim=0, keepdim=True)) / (prototypes.protos[2].std(dim=0, keepdim=True) + eps))
 
 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
