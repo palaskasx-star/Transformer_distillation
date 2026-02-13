@@ -188,11 +188,11 @@ def cait_forward_features(self, x, require_feat: bool = False):
 def cait_forward(self, x, require_feat: bool = True):
     if require_feat:
         x, block_outs = self.forward_features(x, require_feat=True)
-        x = self.forward_head(x)
+        x = self.head(x)
         return x, block_outs
     else:
         x = self.forward_features(x)
-        x = self.forward_head(x)
+        x = self.head(x)
         return x
         
 # --------------------
@@ -233,6 +233,7 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
 
 
 
