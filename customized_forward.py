@@ -164,11 +164,7 @@ def vit_forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None,
 
 # cait
 def cait_forward_features(self, x, require_feat: bool = False):
-    B = x.shape[0]
     x = self.patch_embed(x)
-
-    cls_tokens = self.cls_token.expand(B, -1, -1)
-
     x = x + self.pos_embed
     x = self.pos_drop(x)
 
@@ -176,13 +172,13 @@ def cait_forward_features(self, x, require_feat: bool = False):
     for i, blk in enumerate(self.blocks):
         x = blk(x)
         block_outs.append(x)
+    cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
 
     for i, blk in enumerate(self.blocks_token_only):
         cls_tokens = blk(x, cls_tokens)
-
     x = torch.cat((cls_tokens, x), dim=1)
-
     x = self.norm(x)
+
     if require_feat:
         return x[:, 0], block_outs
     else:
@@ -192,13 +188,13 @@ def cait_forward_features(self, x, require_feat: bool = False):
 def cait_forward(self, x, require_feat: bool = True):
     if require_feat:
         x, block_outs = self.forward_features(x, require_feat=True)
-        x = self.head(x)
+        x = self.forward_head(x)
         return x, block_outs
     else:
         x = self.forward_features(x)
-        x = self.head(x)
+        x = self.forward_head(x)
         return x
-
+        
 # --------------------
 # RegNetY (from timm)
 # --------------------
@@ -237,6 +233,7 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
 
 
 
