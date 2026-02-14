@@ -169,9 +169,12 @@ def cait_forward_features(self, x, require_feat: bool = False):
     x = self.pos_drop(x)
 
     block_outs = []
-    for i, blk in enumerate(self.blocks):
+    for idx, blk in enumerate(self.blocks):
         x = blk(x)
-        block_outs.append(x)
+        if idx in self.out_indices:
+            block_outs.append(x)
+        else:
+            block_outs.append([])
     cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
 
     for i, blk in enumerate(self.blocks_token_only):
@@ -233,6 +236,7 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
 
 
 
