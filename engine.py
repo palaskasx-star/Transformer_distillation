@@ -54,9 +54,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                    args.gamma * (loss_mf_patch) + \
                    args.delta * (loss_mf_rand + args.KoLeoData * loss_KoLeo_rand_data + args.KoLeoPrototypes * loss_KoLeo_rand_proto)
         
-            cls_proto_param = model_without_ddp.proto_proj_module.prototypes[-1].protos[0]
+            cls_proto_param = model.model_without_ddp.proto_proj_module.prototypes[-1].protos[0]
             
-            cls_proj_module = model_without_ddp.proto_proj_module.projectors[-1].projs[0]
+            cls_proj_module = model.model_without_ddp.proto_proj_module.projectors[-1].projs[0]
         
             dummy_loss = 0.0
 
