@@ -31,6 +31,8 @@ import utils
 
 from torch.utils.tensorboard import SummaryWriter
 
+import customized_models
+
 # TensorBoard setup
 def get_writer(output_dir):
     log_dir = Path(output_dir) / "tensorboard"
@@ -109,7 +111,7 @@ def get_args_parser():
                         help='LR decay rate (default: 0.1)')
 
     # Augmentation parameters
-    parser.add_argument('--color-jitter', type=float, default=0.4, metavar='PCT',
+    parser.add_argument('--color-jitter', type=float, default=0.3, metavar='PCT',
                         help='Color jitter factor (default: 0.4)')
     parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
                         help='Use AutoAugment policy. "v0" or "original". " + \
@@ -150,7 +152,7 @@ def get_args_parser():
     parser.add_argument('--teacher-model', default='cait_s24_224', type=str, metavar='MODEL',
                         help='Name of teacher model to train')
     parser.add_argument('--teacher-path', type=str, default='')
-    parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard'], type=str, help="")
+    parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard', 'DKD'], type=str, help="")
     parser.add_argument('--distillation-alpha', default=0.5, type=float, help="")
     parser.add_argument('--distillation-tau', default=1.0, type=float, help="")
 
@@ -201,10 +203,20 @@ def get_args_parser():
 
 
     parser.add_argument('--use-prototypes', action='store_true')
-    parser.add_argument('--prototypes-number', default=256, type=int)
+    parser.add_argument(
+        '--prototypes-number', 
+        default=[256, 512, 1024],  # Provide a list as the default
+        type=int,                  # Each element in the list will be converted to an int
+        nargs=3,                   # Specifically requires 3 arguments
+        help="[Cls, Patch, Rand] number of prototypes"
+    )
+
+    parser.add_argument('--KoLeoData', default=0.1, type=float)
+    parser.add_argument('--KoLeoPrototypes', default=0.1, type=float)
 
     parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
                 help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
+    
     return parser
 
 
@@ -275,7 +287,7 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_K_{args.K}_sids_{'_'.join(map(str, args.s_id))}_tids_{'_'.join(map(str, args.t_id))}"
+    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_cj_{args.color_jitter}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
     if args.use_prototypes:
         extra_info += f"_prototypes_{args.prototypes_number}"
     output_dir = output_dir / extra_info
@@ -292,7 +304,7 @@ def main(args):
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
     )
-    register_forward(model, args.model)
+    register_forward(model, args.model, args.s_id)
 
     if args.finetune:
         if args.finetune.startswith('https'):
@@ -340,9 +352,9 @@ def main(args):
             args.teacher_model,
             pretrained=False,
             num_classes=args.nb_classes,
-            global_pool='avg',
+            #global_pool='avg',
         )
-        register_forward(teacher_model, args.teacher_model)
+        register_forward(teacher_model, args.teacher_model, args.t_id)
 
         if args.teacher_path.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -350,17 +362,24 @@ def main(args):
         else:
             checkpoint = torch.load(args.teacher_path, map_location='cpu')
 
+        if 'model' in checkpoint:
+            state_dict = checkpoint['model']
+        elif 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        else:
+            state_dict = checkpoint
+            
         # process distributed model
         from collections import OrderedDict
         new_state_dict = OrderedDict()
-        for k in checkpoint['model']:
+        for k in state_dict:
             if k[:7] != 'module.':
-                new_state_dict = checkpoint['model']
+                new_state_dict = state_dict
                 break
             new_key = k[7:]
-            new_state_dict[new_key] = checkpoint['model'][k]
+            new_state_dict[new_key] = state_dict[k]
 
-        teacher_model.load_state_dict(new_state_dict)
+        teacher_model.load_state_dict(new_state_dict, strict=False)
         teacher_model.to(device)
         teacher_model.eval()
 
@@ -368,9 +387,20 @@ def main(args):
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
             super().__init__()
-            self.prototypes = torch.nn.ParameterList(prototypes)
-            self.projectors = torch.nn.ModuleList(projectors)
+            # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
+            self.prototypes = torch.nn.ModuleList()
+            self.projectors = torch.nn.ModuleList()
 
+            for proto_list, proj_list in zip(prototypes, projectors):
+                # Wrap each group of 3 prototypes in a submodule with ParameterList
+                proto_module = torch.nn.Module()
+                proto_module.protos = torch.nn.ParameterList(proto_list)
+                self.prototypes.append(proto_module)
+
+                # Wrap each group of 3 projectors in a submodule with ModuleList
+                proj_module = torch.nn.Module()
+                proj_module.projs = torch.nn.ModuleList(proj_list)
+                self.projectors.append(proj_module)
 
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
@@ -380,47 +410,111 @@ def main(args):
             _, features_teacher = teacher_model(images)
             # Student
             _, features_student = model(images)
+
         prototypes = []
         projectors_nets = []
-
         for i, feat in enumerate(args.s_id):
             feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
             feature_dim_student = features_student[args.s_id[i]].shape[2]
 
-            # Initialize prototypes with uniform distribution
-            proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-            _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-            proto = torch.nn.Parameter(proto)   # make it trainable
-            prototypes.append(proto)
+            # Create 3 prototype matrices and 3 projectors for each i
+            proto_list = []
+            projector_list = []
 
-            if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                # MLP: Linear -> ReLU -> Linear
-
-                hidden_dim = 2048
-                
-                projector = torch.nn.Sequential(
-                    torch.nn.Linear(feature_dim_student, hidden_dim),
-                    torch.nn.GELU(),
-                    torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                ).to(device)
+            if args.distillation_beta == 0.0 or feat != 11 :
+                proto_list.append(None)
+                projector_list.append(None)
             else:
-                projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                # Initialize prototype with uniform distribution
+                proto = torch.empty(args.prototypes_number[0], feature_dim_teacher, device=device)
+                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                proto = torch.nn.Parameter(proto)
+                proto_list.append(proto)
 
-            projectors_nets.append(projector)
+                if getattr(args, 'projector_type', 'matrix') == 'MLP':
+                    hidden_dim = 2048
+                    
+                    projector = torch.nn.Sequential(
+                        torch.nn.Linear(feature_dim_student, hidden_dim),
+                        torch.nn.GELU(),
+                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
+                    ).to(device)
+                else:
+                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                    #projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                projector_list.append(projector)
+
+
+            if args.gamma == 0.0:
+                proto_list.append(None)
+                projector_list.append(None)
+            else:
+                # Initialize prototype with uniform distribution
+                proto = torch.empty(args.prototypes_number[1], feature_dim_teacher, device=device)
+                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                proto = torch.nn.Parameter(proto)
+                proto_list.append(proto)
+
+                if getattr(args, 'projector_type', 'matrix') == 'MLP':
+                    hidden_dim = 2048
+                    
+                    projector = torch.nn.Sequential(
+                        torch.nn.Linear(feature_dim_student, hidden_dim),
+                        torch.nn.GELU(),
+                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
+                    ).to(device)
+                else:
+                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                    #projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                projector_list.append(projector)
+                
+            if args.delta == 0.0:
+                proto_list.append(None)
+                projector_list.append(None)
+            else:
+                # Initialize prototype with uniform distribution
+                proto = torch.empty(args.prototypes_number[2], feature_dim_teacher, device=device)
+                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                proto = torch.nn.Parameter(proto)
+                proto_list.append(proto)
+
+                if getattr(args, 'projector_type', 'matrix') == 'MLP':
+                    hidden_dim = 2048
+                    
+                    projector = torch.nn.Sequential(
+                        torch.nn.Linear(feature_dim_student, hidden_dim),
+                        torch.nn.GELU(),
+                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
+                    ).to(device)
+                else:
+                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                    #projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                projector_list.append(projector)
+
+            prototypes.append(proto_list)
+            projectors_nets.append(projector_list)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
-
     else:
         prototypes = []
         projectors_nets = []
         for i, feat in enumerate(args.s_id):
-            prototypes.append(None)
-            projectors_nets.append(None)
+            proto_list = []
+            projector_list = []
+            for j in range(3):
+                proto_list.append(None)
+                projector_list.append(None)
+            prototypes.append(proto_list)
+            projectors_nets.append(projector_list)
 
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
+
+
 
     model_ema = None
     if args.model_ema:
@@ -455,7 +549,7 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, model.module.proto_proj_module.prototypes, model.module.proto_proj_module.projectors, args)
+    criterion = DistillationLoss(criterion, teacher_model, model_without_ddp.proto_proj_module.prototypes, model_without_ddp.proto_proj_module.projectors, args)
 
 
     #output_dir = Path(args.output_dir)
@@ -465,7 +559,6 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
-
         model_without_ddp.load_state_dict(checkpoint['model'])
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
@@ -485,10 +578,6 @@ def main(args):
     # test_stats = evaluate(data_loader_val, teacher_model, device)
     # print(f"Accuracy of the teacher network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
     # Print the mean value for all prototype matrices
-    if args.use_prototypes:
-        for i, proto in enumerate(prototypes):
-            if proto is not None:
-                print(f"Prototype matrix {i} mean value: {proto.data.mean().item()}, std value: {proto.data.std().item()} ")
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -496,20 +585,13 @@ def main(args):
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-            
+
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             args.clip_grad, model_ema, mixup_fn, writer,
             args, set_training_mode=args.finetune == ''  # keep in eval mode during finetuning
         )
-        # Print the mean value for all prototype matrices
-        if args.use_prototypes:
-            for i, proto in enumerate(prototypes):
-                if proto is not None:
-                    print(f"Prototype matrix {i} mean value: {proto.data.mean().item()}, std value: {proto.data.std().item()} ")
-                    # Save histogram to TensorBoard
-                    writer.add_histogram(f'prototypes/layer_{i}', proto.data, epoch)
 
         lr_scheduler.step(epoch)
         if args.output_dir:
@@ -583,9 +665,3 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
-
-
-
-
-
-
