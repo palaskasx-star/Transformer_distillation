@@ -285,6 +285,10 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
 
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
+
+    f_s_cls = F_s[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
+    f_t_cls = F_t[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
+    print(f_s_cls.squeeze().std(dim=0, keepdim=True).mean())
     
     f_s = projectors_net.projs[2](f_s)
 
