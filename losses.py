@@ -318,7 +318,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_mf_rand = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
 
     dev = loss_mf_rand.device
-    print(f"rand: {loss_mf_rand}")
 
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
@@ -397,7 +396,6 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
     loss_mf_cls = (loss12 + loss21)/2
-    print(f"cls: {loss_mf_cls}")
     dev = loss_mf_cls.device
 
     return loss_mf_cls, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
