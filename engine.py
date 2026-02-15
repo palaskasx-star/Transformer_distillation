@@ -41,10 +41,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             outputs = model(samples)
             # loss = criterion(samples, outputs, targets)
             loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = criterion(samples, outputs, targets)
-          if epoch > 1:
-            loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.distillation_beta*(loss_mf_cls + args.KoLeoData*loss_KoLeo_cls_data + args.KoLeoPrototypes*loss_KoLeo_cls_proto) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
-          else:
-            loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
+            if epoch > 1:
+              loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.distillation_beta*(loss_mf_cls + args.KoLeoData*loss_KoLeo_cls_data + args.KoLeoPrototypes*loss_KoLeo_cls_proto) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
+            else:
+              loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
 
         loss_value = loss.item()
 
