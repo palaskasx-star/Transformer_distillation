@@ -211,6 +211,8 @@ def get_args_parser():
 
     # VitKd knowledge transfer
     parser.add_argument('--use-vitkd', action='store_true', default=False)
+    parser.add_argument('--teacher_dims', default=384, type=int)
+    parser.add_argument('--student_dims', default=192, type=int)
     
     return parser
 
@@ -497,7 +499,7 @@ def main(args):
 
 
     if args.use_vitkd:
-        vitkd_projector = ViTKDProjector(student_dims=192, teacher_dims=384).to(device)
+        vitkd_projector = ViTKDProjector(student_dims=args.student_dims, teacher_dims=args.teacher_dims).to(device)
         model.add_module("vitkd_projector", vitkd_projector)
 
     else:
@@ -711,4 +713,5 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
