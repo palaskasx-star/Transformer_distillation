@@ -44,7 +44,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             if epoch > 1:
               loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.distillation_beta*(loss_mf_cls + args.KoLeoData*loss_KoLeo_cls_data + args.KoLeoPrototypes*loss_KoLeo_cls_proto) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
             else:
-              loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
+              loss = ((1 - args.distillation_alpha)*loss_base + args.distillation_alpha*loss_dist) + 0*(loss_mf_cls + args.KoLeoData*loss_KoLeo_cls_data + args.KoLeoPrototypes*loss_KoLeo_cls_proto) + args.gamma*(loss_mf_patch)  +  args.delta*(loss_mf_rand + args.KoLeoData*loss_KoLeo_rand_data + args.KoLeoPrototypes*loss_KoLeo_rand_proto)
 
         loss_value = loss.item()
 
