@@ -18,23 +18,28 @@ import torch
 from typing import Optional
 
 
-def register_forward(model, model_name):
-    if model_name.split('_')[0] == 'deit' or model_name.split('_')[0] == 'deit3':
-        model.forward_features = MethodType(vit_forward_features, model)
-        model.forward = MethodType(vit_forward, model)
-        if 'distilled' in model_name:
-            model.forward_head = MethodType(vit_dist_forward_head, model)
-    elif model_name.split('_')[0] == 'cait':
-        model.forward_features = MethodType(cait_forward_features, model)
-        model.forward = MethodType(cait_forward, model)
-    elif model_name.split('_')[0] == 'regnety':
-        model.forward_features = MethodType(regnet_forward_features, model)
-        model.forward = MethodType(regnet_forward, model)
-    elif 'dinov3' in model_name.lower():
+def register_forward(model, model_name, out_indices ):
+    # Check for keywords anywhere in the name
+    if any(x in model_name.lower() for x in ['dinov3', 'eva02']):
         model.forward_features = MethodType(dinov3_forward_features, model)
         model.forward = MethodType(dinov3_forward, model)
+    elif any(x in model_name for x in ['deit', 'deit3', 'dinov2', 'dino']):
+        model.forward_features = MethodType(vit_forward_features, model)
+        model.forward = MethodType(vit_forward, model)
+    elif 'cait' in model_name:
+        model.forward_features = MethodType(cait_forward_features, model)
+        model.forward = MethodType(cait_forward, model)
+    elif 'regnety' in model_name:
+        model.forward_features = MethodType(regnet_forward_features, model)
+        model.forward = MethodType(regnet_forward, model)
     else:
         raise RuntimeError(f'Not defined customized method forward for model {model_name}')
+
+    if out_indices is not None:
+        model.out_indices = set(out_indices)
+    else:
+        model.out_indices = set(range(len(model.blocks)))
+        
 
 def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
     """Forward pass through feature extraction layers.
@@ -62,32 +67,44 @@ def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -
         for i, blk in enumerate(self.blocks):
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 x = checkpoint(blk, x, rope=rot_pos_embed[i])
-                cls_t = x[:, 0:1] 
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
-                block_outs.append(combined.clone())
+                if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
+                    block_outs.append(combined.clone())
+                else:
+                    block_outs.append([])
 
             else:
                 x = blk(x, rope=rot_pos_embed[i])
-                cls_t = x[:, 0:1] 
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
-                block_outs.append(combined.clone())
+                if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
+                    block_outs.append(combined.clone())
+                else:
+                    block_outs.append([])
     else:
         # Standard path for non-mixed mode
-        for blk in self.blocks:
+        for idx, blk in enumerate(self.blocks):
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 x = checkpoint(blk, x, rope=rot_pos_embed)
-                cls_t = x[:, 0:1] 
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
-                block_outs.append(combined.clone())
+                if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
+                    block_outs.append(combined.clone())
+                else:
+                    block_outs.append([])
             else:
                 x = blk(x, rope=rot_pos_embed)
-                cls_t = x[:, 0:1]
-                patch_t = x[:, 1+num_reg:] 
-                combined = torch.cat([cls_t, patch_t], dim=1)
-                block_outs.append(combined.clone())
+                if idx in self.out_indices:
+                    cls_t = x[:, 0:1] 
+                    patch_t = x[:, 1+num_reg:] 
+                    combined = torch.cat([cls_t, patch_t], dim=1)
+                    block_outs.append(combined.clone())
+                else:
+                    block_outs.append([])
 
 
     x = self.norm(x)
@@ -117,18 +134,13 @@ def vit_forward_features(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor
     x = self.patch_drop(x)
     x = self.norm_pre(x)
     block_outs = []
-    if attn_mask is not None:
-        # If mask provided, we need to apply blocks one by one
-        for blk in self.blocks:
-            x = blk(x, attn_mask=attn_mask)
+
+    for idx, blk in enumerate(self.blocks):
+        x = blk(x)
+        if idx in self.out_indices:
             block_outs.append(x)
-    elif self.grad_checkpointing and not torch.jit.is_scripting():
-        x = checkpoint_seq(self.blocks, x)
-        block_outs.append(x)
-    else:
-        for blk in self.blocks:
-            x = blk(x)
-            block_outs.append(x)
+        else:
+            block_outs.append([])
 
     x = self.norm(x)
     return x, block_outs
@@ -154,25 +166,24 @@ def vit_forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None,
 
 # cait
 def cait_forward_features(self, x, require_feat: bool = False):
-    B = x.shape[0]
     x = self.patch_embed(x)
-
-    cls_tokens = self.cls_token.expand(B, -1, -1)
-
     x = x + self.pos_embed
     x = self.pos_drop(x)
 
     block_outs = []
-    for i, blk in enumerate(self.blocks):
+    for idx, blk in enumerate(self.blocks):
         x = blk(x)
-        block_outs.append(x)
+        if idx in self.out_indices:
+            block_outs.append(x)
+        else:
+            block_outs.append([])
+    cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
 
     for i, blk in enumerate(self.blocks_token_only):
         cls_tokens = blk(x, cls_tokens)
-
     x = torch.cat((cls_tokens, x), dim=1)
-
     x = self.norm(x)
+
     if require_feat:
         return x[:, 0], block_outs
     else:
