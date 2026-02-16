@@ -127,6 +127,8 @@ def get_args_parser():
     parser.add_argument('--no-repeated-aug', action='store_false', dest='repeated_aug')
     parser.set_defaults(repeated_aug=True)
 
+    parser.add_argument('--ThreeAugment', action='store_true') #3augment
+
     # * Random Erase params
     parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
                         help='Random erase prob (default: 0.25)')
