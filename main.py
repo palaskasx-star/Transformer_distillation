@@ -128,6 +128,9 @@ def get_args_parser():
     parser.set_defaults(repeated_aug=True)
 
     parser.add_argument('--ThreeAugment', action='store_true') #3augment
+    parser.add_argument('--src', action='store_true') #simple random crop
+    parser.add_argument('--disable-gray-solar-and-blur', action='store_true', dest='disable_gray_solar_and_blur')  
+    parser.set_defaults(disable_gray_solar_and_blur=False)  # if True, do not use gray_scale, Gaussian Blur, or Solarization when using ThreeAugment
 
     # * Random Erase params
     parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
@@ -673,6 +676,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
