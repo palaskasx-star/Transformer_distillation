@@ -1,15 +1,7 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-"""
-3Augment implementation
-Data-augmentation (DA) based on dino DA (https://github.com/facebookresearch/dino)
-and timm DA(https://github.com/rwightman/pytorch-image-models)
-"""
 import torch
 from torchvision import transforms
 
-from timm.data.transforms import _pil_interp, RandomResizedCropAndInterpolation, ToNumpy, ToTensor
+from timm.data.transforms import RandomResizedCropAndInterpolation, ToNumpy, ToTensor
 
 import numpy as np
 from torchvision import datasets, transforms
@@ -107,13 +99,15 @@ def new_data_aug_generator(args = None):
             transforms.RandomHorizontalFlip()
         ]
 
-        
-    secondary_tfl = [transforms.RandomChoice([gray_scale(p=1.0),
-                                              Solarization(p=1.0),
-                                              GaussianBlur(p=1.0)])]
+    secondary_tfl = []
+    if not args.disable_gray_solar_and_blur:
+        secondary_tfl = [transforms.RandomChoice([gray_scale(p=1.0),
+                                                  Solarization(p=1.0),
+                                                  GaussianBlur(p=1.0)])]
    
     if args.color_jitter is not None and not args.color_jitter==0:
         secondary_tfl.append(transforms.ColorJitter(args.color_jitter, args.color_jitter, args.color_jitter))
+        
     final_tfl = [
             transforms.ToTensor(),
             transforms.Normalize(
