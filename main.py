@@ -268,6 +268,9 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=True,
     )
+    
+    if args.ThreeAugment:
+        data_loader_train.dataset.transform = new_data_aug_generator(args)
 
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val, sampler=sampler_val,
@@ -665,5 +668,6 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
