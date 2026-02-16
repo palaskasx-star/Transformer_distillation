@@ -33,6 +33,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 import customized_models
 
+from augment import new_data_aug_generator
+
+
 # TensorBoard setup
 def get_writer(output_dir):
     log_dir = Path(output_dir) / "tensorboard"
@@ -668,6 +671,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
