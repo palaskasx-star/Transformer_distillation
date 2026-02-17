@@ -51,8 +51,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         else:
             # 2. Early Training (Exclude CLS loss logic to avoid instability)
             loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + \
-                   0.0 * (loss_mf_patch) + \
-                   0.0 * (loss_mf_rand + args.KoLeoData * loss_KoLeo_rand_data + args.KoLeoPrototypes * loss_KoLeo_rand_proto)
+                   args.gamma * (loss_mf_patch) + \
+                   args.delta * (loss_mf_rand + args.KoLeoData * loss_KoLeo_rand_data + args.KoLeoPrototypes * loss_KoLeo_rand_proto)
         
             cls_proto_param = model.module.proto_proj_module.prototypes[-1].protos[0]
             
