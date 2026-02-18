@@ -297,11 +297,11 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
-    #M_s = L2_dist(f_s, protos_norm)
-    M_s = -cosine_kernel(f_s, protos_norm)
+    M_s = L2_dist(f_s, protos_norm)
+    #M_s = -cosine_kenrel(f_s, protos_norm)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    #M_t = L2_dist(f_t, protos_norm)
-    M_t = -cosine_kernel(f_t, protos_norm)
+    M_t = L2_dist(f_t, protos_norm)
+    #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
@@ -381,11 +381,11 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
     
-    #M_s = L2_dist(f_s, protos_norm)
-    M_s = -cosine_kenrel(f_s, protos_norm)
+    M_s = L2_dist(f_s, protos_norm)
+    #M_s = -cosine_kenrel(f_s, protos_norm)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    #M_t = L2_dist(f_t, protos_norm)
-    M_t = -cosine_kernel(f_t, protos_norm)
+    M_t = L2_dist(f_t, protos_norm)
+    #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
