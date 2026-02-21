@@ -225,6 +225,8 @@ def get_args_parser():
     parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
                 help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
     
+    parser.add_argument('--orthogonal-projector', action='store_true',
+                help='Apply orthogonal parametrization to the linear projector.')
     return parser
 
 
@@ -453,7 +455,8 @@ def main(args):
                     ).to(device)
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    #projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                    if args.orthogonal_projector:
+                        projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
                 projector_list.append(projector)
 
 
@@ -478,7 +481,8 @@ def main(args):
                     ).to(device)
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    #projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                    if args.orthogonal_projector:
+                        projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
                 projector_list.append(projector)
                 
             if args.delta == 0.0:
@@ -502,7 +506,8 @@ def main(args):
                     ).to(device)
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    #projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                    if args.orthogonal_projector:
+                        projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
                 projector_list.append(projector)
 
             prototypes.append(proto_list)
@@ -676,6 +681,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
