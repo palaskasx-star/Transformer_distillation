@@ -11,6 +11,3 @@ def vit_tiny_patch16_dinov3(pretrained: bool = False, **kwargs):
         num_heads=3, 
         **kwargs
     )
-
-# Now you can use the string anywhere in your script
-model = timm.create_model('vit_tiny_patch16_dinov3', pretrained=False)
