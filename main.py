@@ -300,9 +300,13 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_cj_{args.color_jitter}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
-    if args.use_prototypes:
-        extra_info += f"_prototypes_{args.prototypes_number}"
+    if args.distillation_type != 'none':
+        extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_cj_{args.color_jitter}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
+        if args.use_prototypes:
+            extra_info += f"_prototypes_{args.prototypes_number}"
+    else:
+        extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_cj_{args.color_jitter}"
+
     output_dir = output_dir / extra_info
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -681,6 +685,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
