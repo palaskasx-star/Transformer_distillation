@@ -460,7 +460,7 @@ def main(args):
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
                     if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
                 projector_list.append(projector)
 
 
@@ -486,7 +486,7 @@ def main(args):
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
                     if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
                 projector_list.append(projector)
                 
             if args.delta == 0.0:
@@ -511,7 +511,7 @@ def main(args):
                 else:
                     projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
                     if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector_, name='weight', orthogonal_map='matrix_exp')
+                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
                 projector_list.append(projector)
 
             prototypes.append(proto_list)
