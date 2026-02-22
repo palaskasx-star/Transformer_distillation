@@ -54,8 +54,8 @@ def get_args_parser():
     parser.add_argument('--delta', default=1.0, type=float)
     parser.add_argument('--K', default=192, type=int)
 
-    parser.add_argument('--s-id', nargs='+', type=int)
-    parser.add_argument('--t-id', nargs='+', type=int)
+    parser.add_argument('--s-id', nargs='+', type=int, default=[-1])
+    parser.add_argument('--t-id', nargs='+', type=int, default=[-1])
 
     # Model parameters
     parser.add_argument('--model', default='deit_base_patch16_224', type=str, metavar='MODEL',
@@ -685,6 +685,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
