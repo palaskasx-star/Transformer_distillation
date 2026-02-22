@@ -72,7 +72,7 @@ class DistillationLoss(nn.Module):
         base_loss = self.base_criterion(outputs, labels)
 
         if self.distillation_type == 'none':
-            return base_loss, torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.)
+            return base_loss, torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.)
 
         # don't backprop throught the teacher
         with torch.no_grad():
