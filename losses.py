@@ -137,7 +137,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
                     F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
 
         else:
-            if beta == 0.0:
+            if beta == 0.0 or id_s != 11:
                 loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
             else:
                 loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = layer_mf_loss_cls(
