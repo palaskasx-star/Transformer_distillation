@@ -203,8 +203,8 @@ def layer_mf_loss_patch(F_s, F_t, K, normalize=False, distance='MSE', temperatur
         M_diff = M_t - M_s
         loss_mf_patch = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
+        M_s = M_s / (M_s.sum(dim=-1, keepdim=True) + eps)
+        M_t = M_t / (M_t.sum(dim=-1, keepdim=True) + eps)
         loss_mf_patch =  -(M_t * torch.log(M_s + eps)).mean()
     
     dev = loss_mf_patch.device
@@ -233,8 +233,8 @@ def layer_mf_loss_cls(F_s, F_t, K, normalize=False, distance='MSE', temperature=
         M_diff = M_t - M_s
         loss_mf_cls = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
+        M_s = M_s / (M_s.sum(dim=-1, keepdim=True) + eps)
+        M_t = M_t / (M_t.sum(dim=-1, keepdim=True) + eps)
         loss_mf_cls =  -(M_t * torch.log(M_s + eps)).mean()
     
     dev = loss_mf_cls.device
@@ -264,8 +264,8 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
         M_diff = M_t - M_s
         loss_mf_rand = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
+        M_s = M_s / (M_s.sum(dim=-1, keepdim=True) + eps)
+        M_t = M_t / (M_t.sum(dim=-1, keepdim=True) + eps)
         loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
     dev = loss_mf_rand.device
     
