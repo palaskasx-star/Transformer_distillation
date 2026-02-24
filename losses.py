@@ -203,7 +203,9 @@ def layer_mf_loss_patch(F_s, F_t, K, normalize=False, distance='MSE', temperatur
         M_diff = M_t - M_s
         loss_mf_patch = (M_diff * M_diff).mean()
     elif distance == 'KL':
+        print(M_s.mean())
         M_s = M_s / M_s.sum(dim=-1, keepdim=True)
+        print(M_s.mean())
         M_t = M_t / M_t.sum(dim=-1, keepdim=True)
         loss_mf_patch = -(M_t * torch.log(M_s + eps)).mean()
     
@@ -233,7 +235,9 @@ def layer_mf_loss_cls(F_s, F_t, K, normalize=False, distance='MSE', temperature=
         M_diff = M_t - M_s
         loss_mf_cls = (M_diff * M_diff).mean()
     elif distance == 'KL':
+        print(M_s.mean())
         M_s = M_s / M_s.sum(dim=-1, keepdim=True)
+        print(M_s.mean())
         M_t = M_t / M_t.sum(dim=-1, keepdim=True)
         loss_mf_cls = -(M_t * torch.log(M_s + eps)).mean()
     
