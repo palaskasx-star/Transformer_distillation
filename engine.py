@@ -41,33 +41,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             outputs = model(samples)
             # loss = criterion(samples, outputs, targets)
             loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = criterion(samples, outputs, targets)
-        if epoch > 2:
-            # 1. Normal Training (All losses active)
-            loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + \
-                   args.distillation_beta * (loss_mf_cls + args.KoLeoData * loss_KoLeo_cls_data + args.KoLeoPrototypes * loss_KoLeo_cls_proto) + \
-                   args.gamma * (loss_mf_patch) + \
-                   args.delta * (loss_mf_rand + args.KoLeoData * loss_KoLeo_rand_data + args.KoLeoPrototypes * loss_KoLeo_rand_proto)
         
-        else:
-            # 2. Early Training (Exclude CLS loss logic to avoid instability)
-            loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + \
-                   args.gamma * (loss_mf_patch) + \
-                   args.delta * (loss_mf_rand + args.KoLeoData * loss_KoLeo_rand_data + args.KoLeoPrototypes * loss_KoLeo_rand_proto)
-        
-            cls_proto_param = model.module.proto_proj_module.prototypes[-1].protos[0]
-            
-            cls_proj_module = model.module.proto_proj_module.projectors[-1].projs[0]
-        
-            dummy_loss = 0.0
-
-            if cls_proto_param is not None:
-                dummy_loss += cls_proto_param.sum()
-
-            if cls_proj_module is not None:
-                for param in cls_proj_module.parameters():
-                    dummy_loss += param.sum()
-        
-            loss = loss + (0.0 * dummy_loss)
+        # 1. Normal Training (All losses active)
+        loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + \
+               args.distillation_beta * (loss_mf_cls + args.KoLeoData * loss_KoLeo_cls_data + args.KoLeoPrototypes * loss_KoLeo_cls_proto) + \
+               args.gamma * (loss_mf_patch) + \
+               args.delta * (loss_mf_rand + args.KoLeoData * loss_KoLeo_rand_data + args.KoLeoPrototypes * loss_KoLeo_rand_proto)
+    
         loss_value = loss.item()
 
         if not math.isfinite(loss_value):
