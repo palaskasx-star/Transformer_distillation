@@ -279,13 +279,6 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
 
 
 def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
-    """
-    prototypes = F.normalize(prototypes, dim=-1, p=2)
-    """
-    #with torch.no_grad():
-    #    prototypes.protos[2].copy_(F.normalize(prototypes.protos[2], dim=1))
-    
-    # manifold loss among random sampled patches
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
@@ -297,7 +290,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     if normalize:
         f_s = normalize_mean_std(f_s.squeeze())
         f_t = normalize_mean_std(f_t.squeeze())
-        protos_norm = normalize_mean_std(prototypes.protos[2])
+        protos_norm = normalize_mean_std(prototypes.protos[2].unsqueeze(0))
 
 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
@@ -323,37 +316,44 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
     loss_mf_rand = (loss12 + loss21)/2
-    #loss_mf_rand = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
-
     dev = loss_mf_rand.device
 
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
 def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
-    f_s = F_s
-    f_t = F_t
+    # exclude the cls token if esists
+    dim_size = F_s.shape[1]
+    root = int(dim_size**0.5)
+
+    if root * root == dim_size:
+        f_s = F_s.clone()
+        f_t = F_t.clone()
+    else:
+        f_s = F_s[:, 1:, :].clone()
+        f_t = F_t[:, 1:, :].clone()
+
+
+    f_s = projectors_net.projs[0](f_s)
 
     if normalize:
-        f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
-        f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
+        f_s = normalize_mean_std(f_s)
+        f_t = normalize_mean_std(f_t)
+        protos_norm = normalize_mean_std(prototypes.protos[0].unsqueeze(0))
 
-    f_s = projectors_net.projs[1](f_s)
+    
+    #loss_KoLeo_rand_data = KoLeoData(f_s)
+    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
+    
+    M_s = L2_dist(f_s, protos_norm)
+    #M_s = -cosine_kenrel(f_s, protos_norm)
+    q1 = sinkhorn(M_s, nmb_iters=3, epsilon=0.05).detach()
+    M_t = L2_dist(f_t, protos_norm)
+    #M_t = -cosine_kernel(f_t, protos_norm)
+    q2 = sinkhorn(M_t, nmb_iters=3, epsilon=0.05).detach()
 
-    f_s = F.normalize(f_s, dim=-1, p=2)
-    f_t = F.normalize(f_t, dim=-1, p=2)
-
-    #loss_KoLeo_patch_data = KoLeoData(f_s)
-    #loss_KoLeo_patch_proto = KoLeoPrototypes( prototypes.protos[0])
-
-    M_s = f_s @ prototypes.protos[0].t()
-    q1 = sinkhorn(M_s, nmb_iters=3).detach()
-    M_t = f_t @ prototypes.protos[0].t()
-    q2 = sinkhorn(M_t, nmb_iters=3).detach()
-
-
-    p1 = F.softmax(M_s / temperature, dim=2)
-    p2 = F.softmax(M_t / temperature, dim=2)
+    p1 = F.softmax(-M_s / temperature, dim=2)
+    p2 = F.softmax(-M_t / temperature, dim=2)
     
     if distance == 'MSE':
         diff12 = q1 - p2
@@ -365,23 +365,21 @@ def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE',
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
     loss_mf_patch = (loss12 + loss21)/2
-
     dev = loss_mf_patch.device
 
     return loss_mf_patch, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
-        
     # cls token loss
-    f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
-    f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
+    f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()
+    f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()
 
     f_s = projectors_net.projs[0](f_s)
 
     if normalize:
-        f_s = normalize_mean_std(f_s.squeeze())
-        f_t = normalize_mean_std(f_t.squeeze())
-        protos_norm = normalize_mean_std(prototypes.protos[0])
+        f_s = normalize_mean_std(f_s)
+        f_t = normalize_mean_std(f_t)
+        protos_norm = normalize_mean_std(prototypes.protos[0].unsqueeze(0))
 
     
     #loss_KoLeo_rand_data = KoLeoData(f_s)
@@ -478,21 +476,26 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
     Q *= B # the colomns must sum to 1 so that Q is an assignment
     return Q.permute(0, 2, 1)
 
-def cosine_kernel(x,p):
-    x = F.normalize(x, p=2, dim=1)  # Normalize vectors
-    p = F.normalize(p, p=2, dim=1)  # Normalize vectors
-    cosine_simmilarity = torch.mm(x, p.t())# Cosine similarity kernel
-    cosine_simmilarity = cosine_simmilarity.unsqueeze(0)
-    return cosine_simmilarity
+def cosine_kernel(x, p):
+    # In 3D (B, F, S), the 'S' dimension is now dim=2
+    x = F.normalize(x, p=2, dim=2)  
+    p = F.normalize(p, p=2, dim=2)  
+    
+    # torch.bmm: (B, F, S) @ (B, S, F) -> (B, F, F)
+    cosine_similarity = torch.bmm(x, p.transpose(1, 2))
+    return cosine_similarity
 
-def L2_dist(x,p):
-    dist = torch.cdist(x, p, p=2)  # Shape: (n, n)
-    dist_sq = dist.pow(2) / x.shape[1]  # Mean squared distance over dimensions
-    dist_sq = dist_sq.unsqueeze(0)
+def L2_dist(x, p):
+    # cdist on (B, F, S) natively computes distance between F points -> (B, F, F)
+    dist = torch.cdist(x, p, p=2)  
+    
+    # Divide by S, which is now x.shape[2] in the 3D tensor
+    dist_sq = dist.pow(2) / x.shape[2]  
     return dist_sq
 
+
 def normalize_mean_std(x, eps=1e-6):
-    x_norm = (x - x.mean(dim=0, keepdim=True)) /  (x.std(dim=0, keepdim=True) + eps)
+    x_norm = (x - x.mean(dim=1, keepdim=True)) /  (x.std(dim=1, keepdim=True) + eps)
     return x_norm
 
 class KoLeoLossData(nn.Module):
