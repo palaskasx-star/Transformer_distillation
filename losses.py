@@ -335,10 +335,18 @@ def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE',
     """
     with torch.no_grad():
         prototypes.protos[0].copy_(F.normalize(prototypes.protos[0], dim=1))
-            
+
+    # exclude the cls token if esists
+    dim_size = F_s.shape[1]
+    root = int(dim_size**0.5)
+
+    if root * root == dim_size:
+        f_s = F_s.clone()
+        f_t = F_t.clone()
+    else:
+        f_s = F_s[:, 1:, :].clone()
+        f_t = F_t[:, 1:, :].clone()
     # manifold loss among different patches (intra-sample)
-    f_s = F_s
-    f_t = F_t
 
     if normalize:
         f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
