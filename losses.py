@@ -23,7 +23,7 @@ class DistillationLoss(nn.Module):
     taking a teacher model prediction and using it as additional supervision.
     """
 
-    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, prototypes: None, projectors_nets: None, args):
+    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, prototypes1: None, prototypes2: None,  projectors_nets: None, args):
         super().__init__()
         self.base_criterion = base_criterion
         self.teacher_model = teacher_model
@@ -40,7 +40,8 @@ class DistillationLoss(nn.Module):
         self.normalize = args.normalize
         self.distance = args.distance
 
-        self.prototypes = prototypes
+        self.prototypes1 = prototypes1
+        self.prototypes2 = prototypes2
         self.projectors_nets = projectors_nets
 
         self.beta = args.distillation_beta
@@ -97,12 +98,12 @@ class DistillationLoss(nn.Module):
         loss_dist = distillation_loss
         loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s,
                                   self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance,
-                                  prototypes=self.prototypes, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, delta=self.delta)  # manifold distillation loss
+                                  prototypes1=self.prototypes1, prototypes2=self.prototypes2, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, delta=self.delta)  # manifold distillation loss
 
         return loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, KoLeoData=None, KoLeoPrototypes=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes1=None, prototypes2=None, projectors_nets=None, KoLeoData=None, KoLeoPrototypes=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0):
     losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_data = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
     losses_KoLeo_proto = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
@@ -117,24 +118,24 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
         if max_patch_num > 0:
             F_s = merge(F_s, max_patch_num)
             F_t = merge(F_t, max_patch_num)
-        if prototypes[idx].protos[0] is not None or prototypes[idx].protos[1] is not None or prototypes[idx].protos[2] is not None:
+        if prototypes1[idx].protos[0] is not None or prototypes1[idx].protos[1] is not None or prototypes1[idx].protos[2] is not None:
             if beta == 0.0 or id_s != 11:
                 loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
             else:
                 loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = layer_mf_loss_prototypes_cls(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes1=prototypes1[idx], prototypes2=prototypes2[idx],  projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
                 
             if gamma == 0.0:
                 loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
             else:
                 loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = layer_mf_loss_prototypes_patch(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)    
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes1=prototypes1[idx], prototypes2=prototypes2[idx],  projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)    
             
             if delta == 0.0:
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
             else:
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_prototypes_rand(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes1=prototypes1[idx], prototypes2=prototypes2[idx],  projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size)
 
         else:
             if beta == 0.0 or id_s != 11:
@@ -278,7 +279,7 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes1=None, prototypes2=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
@@ -288,40 +289,45 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     f_s = projectors_net.projs[2](f_s)
 
     if normalize:
-        f_s = normalize_mean_std(f_s.squeeze())
-        f_t = normalize_mean_std(f_t.squeeze())
-        protos_norm = normalize_mean_std(prototypes.protos[2].unsqueeze(0))
+        f_s = normalize_mean_std(f_s)
+        f_t = normalize_mean_std(f_t)
+        protos_norm1 = normalize_mean_std(prototypes1.protos[2].unsqueeze(0))
+        protos_norm2 = normalize_mean_std(prototypes2.protos[2].unsqueeze(0))
 
-
-    #loss_KoLeo_rand_data = KoLeoData(f_s)
-    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
-
-    M_s = L2_dist(f_s, protos_norm)
-    #M_s = -cosine_kenrel(f_s, protos_norm)
+    M_s = L2_dist(f_s, protos_norm1)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    M_t = L2_dist(f_t, protos_norm)
-    #M_t = -cosine_kernel(f_t, protos_norm)
+    M_t = L2_dist(f_t, protos_norm1)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
+
+    loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
+    loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+
+    loss_mf_patch1 = (loss12 + loss21)/2
+
+    M_s = L2_dist(M_s, protos_norm2)
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    M_t = L2_dist(M_t, protos_norm2)
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+
+    p1 = F.softmax(-M_s / temperature, dim=2)
+    p2 = F.softmax(-M_t / temperature, dim=2)
+
+    loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
+    loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+
+    loss_mf_patch2 = (loss12 + loss21)/2
     
-    if distance == 'MSE':
-        diff12 = q1 - p2
-        diff21 = q2 - p1
-        loss12 = (diff12 * diff12).mean()
-        loss21 = (diff21 * diff21).mean()
-    elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+    loss_mf_patch = (loss_mf_patch1 + loss_mf_patch2)/2
 
-    loss_mf_rand = (loss12 + loss21)/2
-    dev = loss_mf_rand.device
+    dev = loss_mf_patch.device
 
-    return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+    return loss_mf_patch, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
-def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes1=None, prototypes2=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     # exclude the cls token if esists
     dim_size = F_s.shape[1]
     root = int(dim_size**0.5)
@@ -333,43 +339,47 @@ def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE',
         f_s = F_s[:, 1:, :].clone()
         f_t = F_t[:, 1:, :].clone()
 
-
-    f_s = projectors_net.projs[0](f_s)
+    f_s = projectors_net.projs[1](f_s)
 
     if normalize:
         f_s = normalize_mean_std(f_s)
         f_t = normalize_mean_std(f_t)
-        protos_norm = normalize_mean_std(prototypes.protos[0].unsqueeze(0))
+        protos_norm1 = normalize_mean_std(prototypes1.protos[1].unsqueeze(0))
+        protos_norm2 = normalize_mean_std(prototypes2.protos[1].unsqueeze(0))
 
-    
-    #loss_KoLeo_rand_data = KoLeoData(f_s)
-    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
-    
-    M_s = L2_dist(f_s, protos_norm)
-    #M_s = -cosine_kenrel(f_s, protos_norm)
+    M_s = L2_dist(f_s, protos_norm1)
     q1 = sinkhorn(M_s, nmb_iters=3, epsilon=0.05).detach()
-    M_t = L2_dist(f_t, protos_norm)
-    #M_t = -cosine_kernel(f_t, protos_norm)
+    M_t = L2_dist(f_t, protos_norm1)
     q2 = sinkhorn(M_t, nmb_iters=3, epsilon=0.05).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
-    
-    if distance == 'MSE':
-        diff12 = q1 - p2
-        diff21 = q2 - p1
-        loss12 = (diff12 * diff12).mean()
-        loss21 = (diff21 * diff21).mean()
-    elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_patch = (loss12 + loss21)/2
+    loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
+    loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+
+    loss_mf_patch1 = (loss12 + loss21)/2
+
+    M_s = L2_dist(M_s, protos_norm2)
+    q1 = sinkhorn(M_s, nmb_iters=3, epsilon=0.05).detach()
+    M_t = L2_dist(M_t, protos_norm2)
+    q2 = sinkhorn(M_t, nmb_iters=3, epsilon=0.05).detach()
+
+    p1 = F.softmax(-M_s / temperature, dim=2)
+    p2 = F.softmax(-M_t / temperature, dim=2)
+
+    loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
+    loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+
+    loss_mf_patch2 = (loss12 + loss21)/2
+    
+    loss_mf_patch = (loss_mf_patch1 + loss_mf_patch2)/2
+
     dev = loss_mf_patch.device
 
     return loss_mf_patch, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
-def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes1=None, prototypes2=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     # cls token loss
     f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()
     f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()
@@ -379,35 +389,40 @@ def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', e
     if normalize:
         f_s = normalize_mean_std(f_s)
         f_t = normalize_mean_std(f_t)
-        protos_norm = normalize_mean_std(prototypes.protos[0].unsqueeze(0))
+        protos_norm1 = normalize_mean_std(prototypes1.protos[0].unsqueeze(0))
+        protos_norm2 = normalize_mean_std(prototypes2.protos[0].unsqueeze(0))
 
-    
-    #loss_KoLeo_rand_data = KoLeoData(f_s)
-    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
-    
-    M_s = L2_dist(f_s, protos_norm)
-    #M_s = -cosine_kenrel(f_s, protos_norm)
+    M_s = L2_dist(f_s, protos_norm1)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    M_t = L2_dist(f_t, protos_norm)
-    #M_t = -cosine_kernel(f_t, protos_norm)
+    M_t = L2_dist(f_t, protos_norm1)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
+
+    loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
+    loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+
+    loss_mf_patch1 = (loss12 + loss21)/2
+
+    M_s = L2_dist(M_s, protos_norm2)
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    M_t = L2_dist(M_t, protos_norm2)
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+
+    p1 = F.softmax(-M_s / temperature, dim=2)
+    p2 = F.softmax(-M_t / temperature, dim=2)
+
+    loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
+    loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+
+    loss_mf_patch2 = (loss12 + loss21)/2
     
-    if distance == 'MSE':
-        diff12 = q1 - p2
-        diff21 = q2 - p1
-        loss12 = (diff12 * diff12).mean()
-        loss21 = (diff21 * diff21).mean()
-    elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
+    loss_mf_patch = (loss_mf_patch1 + loss_mf_patch2)/2
 
-    loss_mf_cls = (loss12 + loss21)/2
-    dev = loss_mf_cls.device
+    dev = loss_mf_patch.device
 
-    return loss_mf_cls, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+    return loss_mf_patch, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 def merge(x, max_patch_num=196):
     B, P, C = x.shape
@@ -492,6 +507,7 @@ def L2_dist(x, p):
     # Divide by S, which is now x.shape[2] in the 3D tensor
     dist_sq = dist.pow(2) / x.shape[2]  
     return dist_sq
+
 
 
 def normalize_mean_std(x, eps=1e-6):
