@@ -399,31 +399,30 @@ def main(args):
         teacher_model.load_state_dict(new_state_dict, strict=False)
         teacher_model.to(device)
         teacher_model.eval()
-
-
+        
     class ProtoProjectorWrapper(torch.nn.Module):
-        def __init__(self, prototypes1, prototypes2, projectors):
+        def __init__(self, prototypes1, prototypes2, projectors_t1, projectors_t2, projectors_s1, projectors_s2):
             super().__init__()
-            # Each element in prototypes1, prototypes2, and projectors corresponds to one s_id entry
+            # Each element corresponds to one s_id entry
             self.prototypes1 = torch.nn.ModuleList()
             self.prototypes2 = torch.nn.ModuleList()
-            self.projectors = torch.nn.ModuleList()
+            self.projectors_t1 = torch.nn.ModuleList()
+            self.projectors_t2 = torch.nn.ModuleList()
+            self.projectors_s1 = torch.nn.ModuleList()
+            self.projectors_s2 = torch.nn.ModuleList()
 
-            for proto1_list, proto2_list, proj_list in zip(prototypes1, prototypes2, projectors):
-                # Wrap Prototypes 1
-                proto1_module = torch.nn.Module()
-                proto1_module.protos = torch.nn.ParameterList(proto1_list)
-                self.prototypes1.append(proto1_module)
+            for p1, p2, pt1, pt2, ps1, ps2 in zip(prototypes1, prototypes2, projectors_t1, projectors_t2, projectors_s1, projectors_s2):
+                # Wrap Prototypes 1 & 2
+                p1_mod = torch.nn.Module(); p1_mod.protos = torch.nn.ParameterList(p1); self.prototypes1.append(p1_mod)
+                p2_mod = torch.nn.Module(); p2_mod.protos = torch.nn.ParameterList(p2); self.prototypes2.append(p2_mod)
 
-                # Wrap Prototypes 2 (NxN)
-                proto2_module = torch.nn.Module()
-                proto2_module.protos = torch.nn.ParameterList(proto2_list)
-                self.prototypes2.append(proto2_module)
+                # Wrap Teacher Projectors 1 & 2
+                pt1_mod = torch.nn.Module(); pt1_mod.projs = torch.nn.ModuleList(pt1); self.projectors_t1.append(pt1_mod)
+                pt2_mod = torch.nn.Module(); pt2_mod.projs = torch.nn.ModuleList(pt2); self.projectors_t2.append(pt2_mod)
 
-                # Wrap projectors
-                proj_module = torch.nn.Module()
-                proj_module.projs = torch.nn.ModuleList(proj_list)
-                self.projectors.append(proj_module)
+                # Wrap Student Projectors 1 & 2
+                ps1_mod = torch.nn.Module(); ps1_mod.projs = torch.nn.ModuleList(ps1); self.projectors_s1.append(ps1_mod)
+                ps2_mod = torch.nn.Module(); ps2_mod.projs = torch.nn.ModuleList(ps2); self.projectors_s2.append(ps2_mod)
 
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
@@ -434,153 +433,126 @@ def main(args):
             # Student
             _, features_student = model(images)
 
-        prototypes1 = []
-        prototypes2 = [] 
-        projectors_nets = []
+        # ---------------- HELPER FUNCTIONS ----------------
+        def _make_proto(num_protos, dim):
+            proto = torch.empty(num_protos, dim, device=device)
+            _sqrt_k = (1. / dim) ** 0.5
+            torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+            return torch.nn.Parameter(proto)
+
+        def _make_proj(in_dim, out_dim):
+            if getattr(args, 'projector_type', 'matrix') == 'MLP':
+                hidden_dim = 2048
+                return torch.nn.Sequential(
+                    torch.nn.Linear(in_dim, hidden_dim),
+                    torch.nn.GELU(),
+                    torch.nn.Linear(hidden_dim, out_dim)
+                ).to(device)
+            else:
+                proj = torch.nn.Linear(in_dim, out_dim, bias=False).to(device)
+                if getattr(args, 'orthogonal_projector', False):
+                    proj = torch.nn.utils.parametrizations.orthogonal(proj, name='weight', orthogonal_map='matrix_exp')
+                return proj
+        # --------------------------------------------------
+
+        # Master lists for the Wrapper
+        prototypes1, prototypes2 = [], []
+        projectors_t1, projectors_t2 = [], []
+        projectors_s1, projectors_s2 = [], []
         
+        # Define your common dimension F
+        common_dim = getattr(args, 'common_dim', 256) # Adjust default as needed
+
         for i, feat in enumerate(args.s_id):
             feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
             feature_dim_student = features_student[args.s_id[i]].shape[2]
 
-            proto1_list = []
-            proto2_list = []
-            projector_list = []
+            # Temporary lists for this specific feature level
+            p1_list, p2_list = [], []
+            pt1_list, pt2_list = [], []
+            ps1_list, ps2_list = [], []
 
             # ======================== BETA ========================
-            if args.distillation_beta == 0.0 or feat != 11 :
-                proto1_list.append(None)
-                proto2_list.append(None)
-                projector_list.append(None)
+            if args.distillation_beta == 0.0 or feat != 11:
+                p1_list.append(None); p2_list.append(None)
+                pt1_list.append(None); pt2_list.append(None)
+                ps1_list.append(None); ps2_list.append(None)
             else:
                 num_protos = args.prototypes_number[0]
                 
-                # Prototypes 1
-                proto1 = torch.empty(num_protos, feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto1, -_sqrt_k, _sqrt_k)
-                proto1 = torch.nn.Parameter(proto1)
-                proto1_list.append(proto1)
-
-                # Prototypes 2 (NxN)
-                proto2 = torch.empty(num_protos, num_protos, device=device)
-                _sqrt_k2 = (1. / num_protos) ** 0.5
-                torch.nn.init.uniform_(proto2, -_sqrt_k2, _sqrt_k2)
-                proto2 = torch.nn.Parameter(proto2)
-                proto2_list.append(proto2)
-
-                # Projector
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
-                projector_list.append(projector)
+                # P x F Prototypes
+                p1_list.append(_make_proto(num_protos, common_dim))
+                p2_list.append(_make_proto(num_protos, common_dim))
+                
+                # Teacher Projectors: F_t x F
+                pt1_list.append(_make_proj(feature_dim_teacher, common_dim))
+                pt2_list.append(_make_proj(feature_dim_teacher, common_dim))
+                
+                # Student Projectors: F_s x F
+                ps1_list.append(_make_proj(feature_dim_student, common_dim))
+                ps2_list.append(_make_proj(feature_dim_student, common_dim))
 
             # ======================== GAMMA ========================
-            if args.gamma == 0.0:
-                proto1_list.append(None)
-                proto2_list.append(None)
-                projector_list.append(None)
+            if getattr(args, 'gamma', 0.0) == 0.0:
+                p1_list.append(None); p2_list.append(None)
+                pt1_list.append(None); pt2_list.append(None)
+                ps1_list.append(None); ps2_list.append(None)
             else:
                 num_protos = args.prototypes_number[1]
                 
-                # Prototypes 1
-                proto1 = torch.empty(num_protos, feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto1, -_sqrt_k, _sqrt_k)
-                proto1 = torch.nn.Parameter(proto1)
-                proto1_list.append(proto1)
+                p1_list.append(_make_proto(num_protos, common_dim))
+                p2_list.append(_make_proto(num_protos, common_dim))
                 
-                # Prototypes 2 (NxN)
-                proto2 = torch.empty(num_protos, num_protos, device=device)
-                _sqrt_k2 = (1. / num_protos) ** 0.5
-                torch.nn.init.uniform_(proto2, -_sqrt_k2, _sqrt_k2)
-                proto2 = torch.nn.Parameter(proto2)
-                proto2_list.append(proto2)
-
-                # Projector
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
-                projector_list.append(projector)
+                pt1_list.append(_make_proj(feature_dim_teacher, common_dim))
+                pt2_list.append(_make_proj(feature_dim_teacher, common_dim))
+                
+                ps1_list.append(_make_proj(feature_dim_student, common_dim))
+                ps2_list.append(_make_proj(feature_dim_student, common_dim))
                 
             # ======================== DELTA ========================
-            if args.delta == 0.0:
-                proto1_list.append(None)
-                proto2_list.append(None)
-                projector_list.append(None)
+            if getattr(args, 'delta', 0.0) == 0.0:
+                p1_list.append(None); p2_list.append(None)
+                pt1_list.append(None); pt2_list.append(None)
+                ps1_list.append(None); ps2_list.append(None)
             else:
                 num_protos = args.prototypes_number[2]
 
-                # Prototypes 1
-                proto1 = torch.empty(num_protos, feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto1, -_sqrt_k, _sqrt_k)
-                proto1 = torch.nn.Parameter(proto1)
-                proto1_list.append(proto1)
+                p1_list.append(_make_proto(num_protos, common_dim))
+                p2_list.append(_make_proto(num_protos, common_dim))
                 
-                # Prototypes 2 (NxN)
-                proto2 = torch.empty(num_protos, num_protos, device=device)
-                _sqrt_k2 = (1. / num_protos) ** 0.5
-                torch.nn.init.uniform_(proto2, -_sqrt_k2, _sqrt_k2)
-                proto2 = torch.nn.Parameter(proto2)
-                proto2_list.append(proto2)
+                pt1_list.append(_make_proj(feature_dim_teacher, common_dim))
+                pt2_list.append(_make_proj(feature_dim_teacher, common_dim))
+                
+                ps1_list.append(_make_proj(feature_dim_student, common_dim))
+                ps2_list.append(_make_proj(feature_dim_student, common_dim))
 
-                # Projector
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
-                projector_list.append(projector)
+            # Append the layer's lists to the master lists
+            prototypes1.append(p1_list); prototypes2.append(p2_list)
+            projectors_t1.append(pt1_list); projectors_t2.append(pt2_list)
+            projectors_s1.append(ps1_list); projectors_s2.append(ps2_list)
 
-            prototypes1.append(proto1_list)
-            prototypes2.append(proto2_list)
-            projectors_nets.append(projector_list)
-
-        proto_proj_module = ProtoProjectorWrapper(prototypes1, prototypes2, projectors_nets).to(device)
+        # Wrap everything
+        proto_proj_module = ProtoProjectorWrapper(
+            prototypes1, prototypes2, 
+            projectors_t1, projectors_t2, 
+            projectors_s1, projectors_s2
+        ).to(device)
+        
         model.add_module("proto_proj_module", proto_proj_module)
         
     else:
-        prototypes1 = []
-        prototypes2 = []
-        projectors_nets = []
+        # Handle the case where use_prototypes is False
+        prototypes1, prototypes2 = [], []
+        projectors_t1, projectors_t2 = [], []
+        projectors_s1, projectors_s2 = [], []
+
         for i, feat in enumerate(args.s_id):
-            proto1_list = []
-            proto2_list = []
-            projector_list = []
-            for j in range(3):
-                proto1_list.append(None)
-                proto2_list.append(None)
-                projector_list.append(None)
-            prototypes1.append(proto1_list)
-            prototypes2.append(proto2_list)
-            projectors_nets.append(projector_list)
-
-        proto_proj_module = ProtoProjectorWrapper(prototypes1, prototypes2, projectors_nets).to(device)
-        model.add_module("proto_proj_module", proto_proj_module)
-
-
+            prototypes1.append([None] * 3)
+            prototypes2.append([None] * 3)
+            projectors_t1.append([None] * 3)
+            projectors_t2.append([None] * 3)
+            projectors_s1.append([None] * 3)
+            projectors_s2.append([None] * 3)
 
 
     model_ema = None
@@ -616,8 +588,17 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, model_without_ddp.proto_proj_module.prototypes1, model_without_ddp.proto_proj_module.prototypes2, model_without_ddp.proto_proj_module.projectors, args)
-
+    criterion = DistillationLoss(
+        base_criterion=criterion, # Assuming your first argument is the base loss (like CrossEntropy)
+        teacher_model=teacher_model, 
+        prototypes1=model_without_ddp.proto_proj_module.prototypes1, 
+        prototypes2=model_without_ddp.proto_proj_module.prototypes2, 
+        projectors_t1=model_without_ddp.proto_proj_module.projectors_t1,
+        projectors_t2=model_without_ddp.proto_proj_module.projectors_t2,
+        projectors_s1=model_without_ddp.proto_proj_module.projectors_s1,
+        projectors_s2=model_without_ddp.proto_proj_module.projectors_s2,
+        args=args
+    )
 
     #output_dir = Path(args.output_dir)
     if args.resume:
@@ -732,6 +713,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)
+
 
 
 
