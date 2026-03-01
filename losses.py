@@ -360,8 +360,8 @@ def layer_mf_loss_prototypes_rand(
     loss_mf_patch1 = (loss12 + loss21)/2
 
     ###############################################
-    f_s2 = projectors_s1.projs[2](f_s)
-    f_t2 = projectors_t1.projs[2](f_t)
+    f_s2 = projectors_s2.projs[2](f_s)
+    f_t2 = projectors_t2.projs[2](f_t)
 
     if normalize:
         f_s2 = normalize_mean_std(f_s2)
@@ -433,8 +433,8 @@ def layer_mf_loss_prototypes_patch(
     loss_mf_patch1 = (loss12 + loss21)/2
 
     ###############################################
-    f_s2 = projectors_s1.projs[1](f_s)
-    f_t2 = projectors_t1.projs[1](f_t)
+    f_s2 = projectors_s2.projs[1](f_s)
+    f_t2 = projectors_t2.projs[1](f_t)
 
     if normalize:
         f_s2 = normalize_mean_std(f_s2)
@@ -500,8 +500,8 @@ def layer_mf_loss_prototypes_cls(
     loss_mf_patch1 = (loss12 + loss21)/2
 
     ###############################################
-    f_s2 = projectors_s1.projs[0](f_s)
-    f_t2 = projectors_t1.projs[0](f_t)
+    f_s2 = projectors_s2.projs[0](f_s)
+    f_t2 = projectors_t2.projs[0](f_t)
 
     if normalize:
         f_s2 = normalize_mean_std(f_s2)
