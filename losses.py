@@ -288,8 +288,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     f_s = projectors_net.projs[2](f_s)
 
     if normalize:
-        f_s = normalize_mean_std(f_s.squeeze())
-        f_t = normalize_mean_std(f_t.squeeze())
+        f_s = normalize_mean_std(f_s)
+        f_t = normalize_mean_std(f_t)
         protos_norm = normalize_mean_std(prototypes.protos[2].unsqueeze(0))
 
 
