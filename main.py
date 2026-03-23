@@ -367,15 +367,33 @@ def main(args):
         print(f"Creating teacher model: {args.teacher_model}")
         
         if 'swin' in args.teacher_model.lower():
-            # 1. Use checkpoint_path and pretrained=True
-            # This triggers the model's internal checkpoint_filter_fn automatically
+            # 1. Create the model without loading yet
             teacher_model = create_model(
                 args.teacher_model,
-                pretrained=True,
-                checkpoint_path=args.teacher_path,
+                pretrained=False, # We will load manually
                 num_classes=args.nb_classes,
             )
-            print(f"Swin Teacher weights loaded and remapped from: {args.teacher_path}")
+            
+            # 2. Load the checkpoint file
+            print(f"Loading Swin Teacher from: {args.teacher_path}")
+            checkpoint = torch.load(args.teacher_path, map_location='cpu')
+            state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
+            
+            # 3. Clean the state_dict
+            # This removes the 'module.' prefix and filters out head/positional keys that often cause crashes
+            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:] if k.startswith('module.') else k
+                # Optional: Skip the head if classes don't match
+                if 'head' in name:
+                    continue
+                new_state_dict[name] = v
+
+            # 4. Load with strict=False
+            # This allows the model to ignore the position index mismatches
+            msg = teacher_model.load_state_dict(new_state_dict, strict=False)
+            print(f"Swin Teacher loaded with result: {msg}")
         else:
             # Standard logic for non-Swin models (DeiT, ViT, etc.)
             teacher_model = create_model(
