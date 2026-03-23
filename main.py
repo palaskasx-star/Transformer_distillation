@@ -365,40 +365,42 @@ def main(args):
     if args.distillation_type != 'none':
         assert args.teacher_path, 'need to specify teacher-path when using distillation'
         print(f"Creating teacher model: {args.teacher_model}")
-        teacher_model = create_model(
-            args.teacher_model,
-            pretrained=False,
-            num_classes=args.nb_classes,
-            #global_pool='avg',
-        )
-        register_forward(teacher_model, args.teacher_model, args.t_id)
-
-        if args.teacher_path.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.teacher_path, map_location='cpu', check_hash=True)
+        
+        if 'swin' in args.teacher_model.lower():
+            # 1. Use checkpoint_path and pretrained=True
+            # This triggers the model's internal checkpoint_filter_fn automatically
+            teacher_model = create_model(
+                args.teacher_model,
+                pretrained=True,
+                checkpoint_path=args.teacher_path,
+                num_classes=args.nb_classes,
+            )
+            print(f"Swin Teacher weights loaded and remapped from: {args.teacher_path}")
         else:
-            checkpoint = torch.load(args.teacher_path, map_location='cpu')
-
-        if 'model' in checkpoint:
-            state_dict = checkpoint['model']
-        elif 'state_dict' in checkpoint:
-            state_dict = checkpoint['state_dict']
-        else:
-            state_dict = checkpoint
+            # Standard logic for non-Swin models (DeiT, ViT, etc.)
+            teacher_model = create_model(
+                args.teacher_model,
+                pretrained=False,
+                num_classes=args.nb_classes,
+            )
             
-        # process distributed model
-        from collections import OrderedDict
-        new_state_dict = OrderedDict()
-        for k in state_dict:
-            if k[:7] != 'module.':
-                new_state_dict = state_dict
-                break
-            new_key = k[7:]
-            new_state_dict[new_key] = state_dict[k]
+            # Manual loading logic for non-Swin models
+            if args.teacher_path.startswith('https'):
+                checkpoint = torch.hub.load_state_dict_from_url(
+                    args.teacher_path, map_location='cpu', check_hash=True)
+            else:
+                checkpoint = torch.load(args.teacher_path, map_location='cpu')
 
-        teacher_model.load_state_dict(new_state_dict, strict=False)
-        teacher_model.to(device)
-        teacher_model.eval()
+            state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
+            
+            # process distributed model prefix
+            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                new_key = k[7:] if k.startswith('module.') else k
+                new_state_dict[new_key] = v
+
+            teacher_model.load_state_dict(new_state_dict, strict=False)
 
 
     class ProtoProjectorWrapper(torch.nn.Module):
