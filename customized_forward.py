@@ -20,16 +20,18 @@ from typing import Optional
 
 def register_forward(model, model_name, out_indices ):
     # Check for keywords anywhere in the name
-    if any(x in model_name.lower() for x in ['dinov3', 'eva02']):
+    model_name_lower = model_name.lower()
+    
+    if any(x in model_name_lower.lower() for x in ['dinov3', 'eva02']):
         model.forward_features = MethodType(dinov3_forward_features, model)
         model.forward = MethodType(dinov3_forward, model)
-    elif any(x in model_name for x in ['deit', 'deit3', 'dinov2', 'dino']):
+    elif any(x in model_name_lower for x in ['deit', 'deit3', 'dinov2', 'dino']):
         model.forward_features = MethodType(vit_forward_features, model)
         model.forward = MethodType(vit_forward, model)
-    elif 'cait' in model_name:
+    elif 'cait' in model_name_lower:
         model.forward_features = MethodType(cait_forward_features, model)
         model.forward = MethodType(cait_forward, model)
-    elif 'regnety' in model_name:
+    elif 'regnety' in model_name_lower:
         model.forward_features = MethodType(regnet_forward_features, model)
         model.forward = MethodType(regnet_forward, model)
     elif 'swin' in model_name_lower:
