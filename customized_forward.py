@@ -32,6 +32,9 @@ def register_forward(model, model_name, out_indices ):
     elif 'regnety' in model_name:
         model.forward_features = MethodType(regnet_forward_features, model)
         model.forward = MethodType(regnet_forward, model)
+    elif 'swin' in model_name_lower:
+        model.forward_features = MethodType(swin_forward_features, model)
+        model.forward = MethodType(swin_forward, model)
     else:
         raise RuntimeError(f'Not defined customized method forward for model {model_name}')
 
@@ -238,3 +241,44 @@ def regnet_forward(self, x, require_feat: bool = True):
         return logits, feats
     else:
         return self.forward_features(x)
+
+
+def swin_forward_features(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
+    """
+    Custom forward_features for Swin Transformer V2.
+    Captures intermediate outputs after each stage (layer).
+    """
+    x = self.patch_embed(x)
+    block_outs = []
+    
+    for idx, stage in enumerate(self.layers):
+        x = stage(x)
+        if idx in self.out_indices:
+            # Swin outputs feature maps as (B, H, W, C). 
+            # If your KD framework expects a sequence of tokens (B, N, C) like ViT, 
+            # we flatten the spatial dimensions.
+            B, H, W, C = x.shape
+            feat = x.view(B, H * W, C)
+            block_outs.append(feat)
+        else:
+            block_outs.append([])
+            
+    x = self.norm(x)
+    
+    if require_feat:
+        return x, block_outs
+    return x, block_outs
+
+
+def swin_forward(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
+    """Forward pass for Swin Transformer V2."""
+    x, block_outs = self.forward_features(x, require_feat=True)
+    
+    # Swin typically outputs NHWC before the head. 
+    # timm's forward_head handles the pooling and flattening.
+    x = self.forward_head(x)
+    
+    if require_feat:
+        return x, block_outs
+    else:
+        return x, block_outs
