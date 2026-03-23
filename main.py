@@ -373,6 +373,9 @@ def main(args):
                 num_classes=args.nb_classes,
                 # checkpoint_path=None  # Ensure this is NOT used to avoid local mismatch
             )
+            teacher_model.to(device)
+            teacher_model.eval()
+
             print(f"Teacher {args.teacher_model} initialized with official timm pretrained weights.")
         else:
             # Standard logic for non-Swin models (DeiT, ViT, etc.)
@@ -399,6 +402,8 @@ def main(args):
                 new_state_dict[new_key] = v
 
             teacher_model.load_state_dict(new_state_dict, strict=False)
+            teacher_model.to(device)
+            teacher_model.eval()
 
 
     class ProtoProjectorWrapper(torch.nn.Module):
