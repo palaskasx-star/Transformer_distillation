@@ -409,7 +409,7 @@ def main(args):
                 new_key = k[7:]
                 new_state_dict[new_key] = state_dict[k]
     
-            teacher_model.load_state_dict(new_state_dict)
+            teacher_model.load_state_dict(new_state_dict, strict=False)
             teacher_model.to(device)
             teacher_model.eval()
 
