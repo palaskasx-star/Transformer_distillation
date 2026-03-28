@@ -268,12 +268,12 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
         M_diff = M_t - M_s
         loss_mf_rand = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1) / 2
-        M_t = (M_t + 1) / 2
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
-        #M_s = F.softmax(-M_s / temperature, dim=2)
-        #M_t = F.softmax(-M_t / temperature, dim=2)
+        #M_s = (M_s + 1) / 2
+        #M_t = (M_t + 1) / 2
+        #M_s = M_s / M_s.sum(dim=-1, keepdim=True)
+        #M_t = M_t / M_t.sum(dim=-1, keepdim=True)
+        M_s = F.softmax(-M_s / 1, dim=2)
+        M_t = F.softmax(-M_t / 1, dim=2)
         loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
     dev = loss_mf_rand.device
     
