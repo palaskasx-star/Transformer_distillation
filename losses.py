@@ -245,7 +245,7 @@ def layer_mf_loss_cls(F_s, F_t, K, normalize=False, distance='MSE', temperature=
     
     return loss_mf_cls, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
-def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1 , eps=1e-8): 
+def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8): 
     # manifold loss among random sampled patches
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
@@ -272,8 +272,6 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
         M_t = (M_t + 1) / 2
         M_s = M_s / M_s.sum(dim=-1, keepdim=True)
         M_t = M_t / M_t.sum(dim=-1, keepdim=True)
-        #M_s = F.softmax(-M_s / 1, dim=2)
-        #M_t = F.softmax(-M_t / 1, dim=2)
         loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
     dev = loss_mf_rand.device
     
@@ -305,7 +303,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
-    # cgange this from 1 to temperature
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
     
@@ -317,7 +314,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     elif distance == 'KL':
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
-        
+
     loss_mf_rand = (loss12 + loss21)/2
     dev = loss_mf_rand.device
 
