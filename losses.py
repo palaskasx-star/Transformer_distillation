@@ -254,25 +254,25 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
 
     if normalize:
-        f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
-        f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
+        f_s = normalize_mean_std(f_s)
+        f_t = normalize_mean_std(f_t)
 
-    
-    f_s = F.normalize(f_s, dim=-1, p=2)
-    f_t = F.normalize(f_t, dim=-1, p=2)
-
-    M_s = f_s.bmm(f_s.transpose(-1, -2))
-    M_t = f_t.bmm(f_t.transpose(-1, -2))
+    M_s = L2_dist(f_s, f_s)
+    M_t = L2_dist(f_t, f_t) 
 
     if distance == 'MSE':
         M_diff = M_t - M_s
         loss_mf_rand = (M_diff * M_diff).mean()
     elif distance == 'KL':
+        """
         M_s = (M_s + 1) / 2
         M_t = (M_t + 1) / 2
         M_s = M_s / M_s.sum(dim=-1, keepdim=True)
         M_t = M_t / M_t.sum(dim=-1, keepdim=True)
-        loss_mf_rand = -(M_t * torch.log(M_s + eps)).mean()
+        """
+        p1 = F.softmax(-M_s / 1, dim=2)
+        p2 = F.softmax(-M_t / 1, dim=2)
+        loss_mf_rand = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2)) / 2
     dev = loss_mf_rand.device
     
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
@@ -306,8 +306,13 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     M_s = L2_dist(f_s, f_s)
     M_t = L2_dist(f_t, f_t)
 
+    """
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
+    """
+    
+    p1 = F.softmax(-M_s / 1, dim=2)
+    p2 = F.softmax(-M_t / 1, dim=2)
     
     if distance == 'MSE':
         diff12 = q1 - p2
