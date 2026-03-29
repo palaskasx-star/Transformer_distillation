@@ -295,13 +295,16 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
-
+    """
     M_s = L2_dist(f_s, protos_norm)
     #M_s = -cosine_kernel(f_s, protos_norm)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     M_t = L2_dist(f_t, protos_norm)
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    """
+    M_s = L2_dist(f_s, f_s)
+    M_t = L2_dist(f_t, f_t)
 
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
@@ -312,10 +315,14 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        """
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
-
-    loss_mf_rand = (loss12 + loss21)/2
+        """
+        loss12 = 0
+        loss21 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
+        
+    loss_mf_rand = (loss12 + loss21)/2 + 0*protos_norm.std()
     dev = loss_mf_rand.device
 
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
