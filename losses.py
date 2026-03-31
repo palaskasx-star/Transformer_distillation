@@ -311,15 +311,21 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     p2 = F.softmax(-M_t / temperature, dim=2)
     """
     
-    p1 = F.softmax(-M_s / 1, dim=2)
-    p2 = F.softmax(-M_t / 1, dim=2)
+
     
     if distance == 'MSE':
+        """
         diff12 = q1 - p2
         diff21 = q2 - p1
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
+        """
+        loss12 = 0
+        diff21 = M_s - M_t
+        loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        p1 = F.softmax(-M_s / 0.1, dim=2)
+        p2 = F.softmax(-M_t / 0.1, dim=2)
         """
         loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
