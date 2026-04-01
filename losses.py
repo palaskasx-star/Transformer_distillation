@@ -322,7 +322,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
 
     loss_mf_rand = (loss12 + loss21)/2
     """
-    loss_mf_rand = 
     dev = loss_mf_rand.device
 
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
