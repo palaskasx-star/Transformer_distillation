@@ -289,7 +289,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     f_t = F.layer_norm(f_t, (f_t.shape[1],))
 
     # 5. Calculate the Smooth L1 Loss multiplied by the alpha weight
-    loss_mf_rand = alpha * F.smooth_l1_loss(f_t, f_s) + 0*prototypes.protos[2]
+    loss_mf_rand = F.smooth_l1_loss(f_t, f_s) + 0*prototypes.protos[2]
     
     """
     if normalize:
