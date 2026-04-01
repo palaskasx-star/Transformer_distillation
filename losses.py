@@ -277,21 +277,12 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
 def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
-    """
+
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-    """
-    f_s = F_s.mean(dim=1)
-    f_t = F_t.mean(dim=1)
     
     f_s = projectors_net.projs[2](f_s)
 
-    f_t = F.layer_norm(f_t, (f_t.shape[1],))
-
-    # 5. Calculate the Smooth L1 Loss multiplied by the alpha weight
-    loss_mf_rand = F.smooth_l1_loss(f_t, f_s) + 0*prototypes.protos[2].std()
-    
-    """
     if normalize:
         f_s = normalize_mean_std(f_s)
         f_t = normalize_mean_std(f_t)
@@ -317,11 +308,10 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
-
-    loss_mf_rand = (loss12 + loss21)/2
-    """
+        loss12 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
+        loss21 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
+        
+    loss_mf_rand = (loss12 + loss21)/2 
     dev = loss_mf_rand.device
 
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
