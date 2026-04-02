@@ -96,6 +96,7 @@ class DistillationLoss(nn.Module):
             distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
         """
         distillation_loss = 0
+        base_loss = 0
 
         block_outs_s = [0] * len(block_outs_t)
 
