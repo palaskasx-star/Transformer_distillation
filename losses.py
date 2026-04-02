@@ -63,6 +63,7 @@ class DistillationLoss(nn.Module):
         """
         # only consider the case of [outputs, block_outs_s] or [(outputs, outputs_kd), block_outs_s]
         # i.e. 'require_feat' is always True when we compute loss
+        """
         block_outs_s = outputs[1]
         if isinstance(outputs[0], torch.Tensor):
             outputs = outputs_kd = outputs[0]
@@ -73,11 +74,12 @@ class DistillationLoss(nn.Module):
 
         if self.distillation_type == 'none':
             return base_loss, torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.)
-
+        """
         # don't backprop throught the teacher
         with torch.no_grad():
             teacher_outputs, block_outs_t = self.teacher_model(inputs)
 
+        """
         if self.distillation_type == 'soft':
             T = self.tau
             distillation_loss = F.kl_div(
@@ -92,6 +94,10 @@ class DistillationLoss(nn.Module):
             #base_loss = 2*base_loss
         elif self.distillation_type == 'hard':
             distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
+        """
+        distillation_loss = 0
+
+        block_outs_s = [0] * len(block_outs_t)
 
         loss_base = base_loss
         loss_dist = distillation_loss
@@ -278,28 +284,28 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
-    f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
+    #f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     
-    f_s = projectors_net.projs[2](f_s)
+    #f_s = projectors_net.projs[2](f_s)
 
-    if normalize:
-        f_s = normalize_mean_std(f_s)
-        f_t = normalize_mean_std(f_t)
-        protos_norm = normalize_mean_std(prototypes.protos[2].unsqueeze(0))
+    #if normalize:
+        #f_s = normalize_mean_std(f_s)
+        #f_t = normalize_mean_std(f_t)
+        #protos_norm = normalize_mean_std(prototypes.protos[2].unsqueeze(0))
 
 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
-    M_s = L2_dist(f_s, protos_norm)
+    #M_s = L2_dist(f_s, protos_norm)
     #M_s = -cosine_kernel(f_s, protos_norm)
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    #q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     M_t = L2_dist(f_t, protos_norm)
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
-    p1 = F.softmax(-M_s / temperature, dim=2)
+    #p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
 
     if distance == 'MSE':
@@ -308,8 +314,10 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        #loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
+        #loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
         loss12 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
+        loss21 = 0
         
     loss_mf_rand = (2*loss12 + loss21)/2 
     dev = loss_mf_rand.device
