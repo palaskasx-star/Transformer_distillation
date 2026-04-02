@@ -639,7 +639,7 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
                 
-            if (epoch + 1) % 10 == 0:
+            if (epoch + 1) % 1 == 0:
                 checkpoint_paths = [output_dir / f'checkpoint_epoch_{epoch + 1}.pth']
                 for checkpoint_path in checkpoint_paths:
                     utils.save_on_master({
