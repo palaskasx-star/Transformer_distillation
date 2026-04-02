@@ -95,8 +95,8 @@ class DistillationLoss(nn.Module):
         elif self.distillation_type == 'hard':
             distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
         """
-        distillation_loss = 0
-        base_loss = 0
+        distillation_loss = torch.tensor(0.0)
+        base_loss = torch.tensor(0.0)
 
         block_outs_s = [0] * len(block_outs_t)
 
