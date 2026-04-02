@@ -305,6 +305,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        p2 = F.softmax(-M_t / temperature, dim=2)
         p1_detatch = F.softmax(-M_s_detatched / temperature, dim=2)
         p2_detatch = F.softmax(-M_t_detatched / temperature, dim=2)
 
