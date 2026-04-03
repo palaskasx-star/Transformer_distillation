@@ -291,15 +291,15 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
-    M_s_detached_prot = L2_dist(f_s, protos_norm.detach())
-    M_s_detached_patches = L2_dist(f_s.detach(), protos_norm)
-    M_s = L2_dist(f_s.detach(), protos_norm)
+    M_s= L2_dist(f_s, protos_norm)
     #M_s = -cosine_kernel(f_s, protos_norm)
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    M_t_detached_prot = L2_dist(f_t, protos_norm.detach())
+    #q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     M_t = L2_dist(f_t, protos_norm)
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+
+    p1 = F.softmax(-M_s / temperature, dim=2)
+    p2 = F.softmax(-M_t / temperature, dim=2)
 
     if distance == 'MSE':
         diff12 = q1 - p2
@@ -307,17 +307,10 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
-        p1 = F.softmax(-M_s / temperature, dim=2)
-        p2 = F.softmax(-M_t / temperature, dim=2)
-        p1_detach_prot = F.softmax(-M_s_detached_prot / temperature, dim=2)
-        p2_detach_prot = F.softmax(-M_t_detached_prot / temperature, dim=2)
-        p1_detach_patches = F.softmax(-M_s_detached_prot / temperature, dim=2)
+        loss12 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
+        loss21 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
 
-        loss1 = - torch.mean(torch.sum(p2_detach_prot * torch.log(p1_detach_prot + 1e-6), dim=2))
-        loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
-        loss3 = - torch.mean(torch.sum(q1 * torch.log(p1_detach_patches + 1e-6), dim=2))
-
-    loss_mf_rand = (loss1 + 0.5*loss2 + 0.5*loss3)/2
+    loss_mf_rand = (0.5*loss12 + loss21)/2
 
     dev = loss_mf_rand.device
 
@@ -601,4 +594,4 @@ def DKD_loss(logit_s, logit_t, gt_label, temp=1, gamma=1):
     loss_non =  (T_i * S_i).sum(dim=1).mean()
     loss_non = - gamma * (temp**2) * loss_non
 
-    return loss_t + loss_non 
+    return loss_t + loss_non
