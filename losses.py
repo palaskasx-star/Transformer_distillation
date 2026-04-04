@@ -311,7 +311,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         p2 = F.softmax(-M_t / temperature, dim=2)
         p1_detach_prot = F.softmax(-M_s_detached_prot / temperature, dim=2)
         p2_detach_prot = F.softmax(-M_t_detached_prot / temperature, dim=2)
-        p1_detach_patches = F.softmax(-M_s_detached_prot / temperature, dim=2)
+        p1_detach_patches = F.softmax(-M_s_detached_patches / temperature, dim=2)
 
         loss1 = - torch.mean(torch.sum(p2_detach_prot * torch.log(p1_detach_prot + 1e-6), dim=2))
         loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
