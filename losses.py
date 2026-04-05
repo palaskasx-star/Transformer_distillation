@@ -297,7 +297,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     M_t = L2_dist(f_t, f_t)
     #M_t = -cosine_kernel(f_t, protos_norm)
     #q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    p1 = 100 * F.softmax(-M_s / 1, dim=2)
+    p1 = F.softmax(-M_s / 1, dim=2)
     p2 = 100 * F.softmax(-M_t / 1, dim=2)
     
     if distance == 'MSE':
