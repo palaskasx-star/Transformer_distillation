@@ -298,7 +298,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #M_t = -cosine_kernel(f_t, protos_norm)
     #q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     p1 = F.softmax(-M_s / 1, dim=2)
-    p2 = 100 * F.softmax(-M_t / 1, dim=2)
+    p2 = F.softmax(-M_t / 1, dim=2)
     
     if distance == 'MSE':
         diff12 = q1 - p2
@@ -308,7 +308,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     elif distance == 'KL':
         loss1 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_rand = (loss1)/2 + 0*protos_norm.std()
+    loss_mf_rand = 100 * (loss1)/2 + 0*protos_norm.std()
 
     dev = loss_mf_rand.device
 
