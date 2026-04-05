@@ -308,7 +308,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     elif distance == 'KL':
         loss1 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
 
-    loss_mf_rand = (loss1)/2
+    loss_mf_rand = (loss1)/2 + 0*protos_norm.std()
 
     dev = loss_mf_rand.device
 
