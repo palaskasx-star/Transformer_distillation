@@ -442,9 +442,9 @@ def main(args):
         # Convert your saved numpy arrays into PyTorch tensors and move to device
         # We store them in a list corresponding to the order of args.s_id 
         custom_centroids = [
-            torch.tensor(centroid_dict['first'], dtype=torch.float32, device=device),
-            torch.tensor(centroid_dict['middle'], dtype=torch.float32, device=device),
-            torch.tensor(centroid_dict['last'], dtype=torch.float32, device=device)
+            centroid_dict['first'].clone().detach().to(dtype=torch.float32, device=device),
+            centroid_dict['middle'].clone().detach().to(dtype=torch.float32, device=device),
+            centroid_dict['last'].clone().detach().to(dtype=torch.float32, device=device)
         ]
 
     if args.use_prototypes:
