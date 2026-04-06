@@ -274,7 +274,7 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=1, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
     
@@ -306,10 +306,10 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
-        loss1 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
-        loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
+        loss1 = - 100*temperature**2*torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
+        loss2 = - 100*temperature**2torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
 
-    loss_mf_rand = (loss1 + 5*loss2)/2
+    loss_mf_rand = (loss1 + 2*loss2)/2
 
     dev = loss_mf_rand.device
 
