@@ -274,7 +274,7 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=1, world_size=1):
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
     
@@ -292,6 +292,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
     M_s = L2_dist(f_s, protos_norm)
+    M_s_detatch = L2_dist(f_s, protos_norm.detach())
     #M_s = -cosine_kernel(f_s, protos_norm)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     M_t = L2_dist(f_t, protos_norm)
@@ -299,6 +300,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
+
+    p1_detatch = F.softmax(-M_s / temperature, dim=2)
     
     if distance == 'MSE':
         diff12 = q1 - p2
@@ -308,8 +311,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     elif distance == 'KL':
         loss1 = - 100*temperature**2*torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
         loss2 = - 100*temperature**2*torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
-
-    loss_mf_rand = (loss1 + 2*loss2)/2
+        loss3 = - 100*temperature**2*torch.mean(torch.sum(q1 * torch.log(p1_detatch + 1e-6), dim=2))
+    loss_mf_rand = (loss1 + loss2 + loss3)/2
 
     dev = loss_mf_rand.device
 
