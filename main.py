@@ -227,6 +227,9 @@ def get_args_parser():
     
     parser.add_argument('--orthogonal-projector', action='store_true',
                 help='Apply orthogonal parametrization to the linear projector.')
+
+    parser.add_argument('--centroids-path', default='', type=str, 
+                help='Path to the saved centroids .pth file to use as frozen prototypes')
     return parser
 
 
@@ -431,6 +434,19 @@ def main(args):
                 proj_module.projs = torch.nn.ModuleList(proj_list)
                 self.projectors.append(proj_module)
 
+    custom_centroids = None
+    if args.centroids_path:
+        print(f"Loading frozen centroids from '{args.centroids_path}'...")
+        centroid_dict = torch.load(args.centroids_path, map_location='cpu')
+        
+        # Convert your saved numpy arrays into PyTorch tensors and move to device
+        # We store them in a list corresponding to the order of args.s_id 
+        custom_centroids = [
+            torch.tensor(centroid_dict['first'], dtype=torch.float32, device=device),
+            torch.tensor(centroid_dict['middle'], dtype=torch.float32, device=device),
+            torch.tensor(centroid_dict['last'], dtype=torch.float32, device=device)
+        ]
+
     if args.use_prototypes:
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
 
@@ -454,11 +470,16 @@ def main(args):
                 proto_list.append(None)
                 projector_list.append(None)
             else:
-                # Initialize prototype with uniform distribution
-                proto = torch.empty(args.prototypes_number[0], feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                proto = torch.nn.Parameter(proto)
+                if custom_centroids is not None and i < len(custom_centroids):
+                    # Slice the loaded centroids to match requested number (e.g., 256) and FREEZE
+                    proto = custom_centroids[i][:args.prototypes_number[0], :].clone()
+                    proto = torch.nn.Parameter(proto, requires_grad=False)
+                else:
+                    # Fallback to original random trainable initialization
+                    proto = torch.empty(args.prototypes_number[0], feature_dim_teacher, device=device)
+                    _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                    torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                    proto = torch.nn.Parameter(proto)
                 proto_list.append(proto)
 
                 if getattr(args, 'projector_type', 'matrix') == 'MLP':
@@ -480,11 +501,14 @@ def main(args):
                 proto_list.append(None)
                 projector_list.append(None)
             else:
-                # Initialize prototype with uniform distribution
-                proto = torch.empty(args.prototypes_number[1], feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                proto = torch.nn.Parameter(proto)
+                if custom_centroids is not None and i < len(custom_centroids):
+                    proto = custom_centroids[i][:args.prototypes_number[1], :].clone()
+                    proto = torch.nn.Parameter(proto, requires_grad=False)
+                else:
+                    proto = torch.empty(args.prototypes_number[1], feature_dim_teacher, device=device)
+                    _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                    torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                    proto = torch.nn.Parameter(proto)
                 proto_list.append(proto)
 
                 if getattr(args, 'projector_type', 'matrix') == 'MLP':
@@ -505,11 +529,14 @@ def main(args):
                 proto_list.append(None)
                 projector_list.append(None)
             else:
-                # Initialize prototype with uniform distribution
-                proto = torch.empty(args.prototypes_number[2], feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                proto = torch.nn.Parameter(proto)
+                if custom_centroids is not None and i < len(custom_centroids):
+                    proto = custom_centroids[i][:args.prototypes_number[2], :].clone()
+                    proto = torch.nn.Parameter(proto, requires_grad=False)
+                else:
+                    proto = torch.empty(args.prototypes_number[2], feature_dim_teacher, device=device)
+                    _sqrt_k = (1. / feature_dim_teacher) ** 0.5
+                    torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
+                    proto = torch.nn.Parameter(proto)
                 proto_list.append(proto)
 
                 if getattr(args, 'projector_type', 'matrix') == 'MLP':
