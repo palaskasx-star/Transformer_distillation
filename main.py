@@ -437,7 +437,7 @@ def main(args):
     custom_centroids = None
     if args.centroids_path:
         print(f"Loading frozen centroids from '{args.centroids_path}'...")
-        centroid_dict = torch.load(args.centroids_path, map_location='cpu')
+        centroid_dict = torch.load(args.centroids_path, map_location='cpu', weights_only=False)
         
         # Convert your saved numpy arrays into PyTorch tensors and move to device
         # We store them in a list corresponding to the order of args.s_id 
