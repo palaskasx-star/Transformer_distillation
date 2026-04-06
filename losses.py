@@ -454,17 +454,17 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
     # make the matrix sums to 1
     sum_Q = Q.sum(dim=(1, 2), keepdim=True)
     dist.all_reduce(sum_Q)
-    Q /= sum_Q
+    Q /= (sum_Q + 1e-8)
 
     for it in range(nmb_iters):
         # normalize each row: total weight per prototype must be 1/K
         sum_of_rows = torch.sum(Q, dim=2, keepdim=True)
         dist.all_reduce(sum_of_rows)
-        Q /= sum_of_rows
+        Q /= (sum_of_rows + 1e-8)
         Q /= K
 
         # normalize each column: total weight per sample must be 1/B
-        Q /= torch.sum(Q, dim=1, keepdim=True)
+        Q /= (torch.sum(Q, dim=1, keepdim=True) + 1e-8)
         Q /= B
 
     Q *= B # the colomns must sum to 1 so that Q is an assignment
