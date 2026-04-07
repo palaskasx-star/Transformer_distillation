@@ -318,7 +318,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     elif distance == 'KL':
         #loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
         #loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
-        loss12 = torch.mean(torch.sum(q2 * M_t, dim=2))
+        loss12 = torch.mean(torch.sum(q2 * torch.log(M_t), dim=2))
         loss21 = 0
         
     loss_mf_rand = (2*loss12 + loss21)/2 
