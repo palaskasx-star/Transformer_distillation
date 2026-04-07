@@ -306,9 +306,10 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
-        loss1 = - 100*temperature**2*torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
-        loss2 = + 100*temperature**2*torch.mean(torch.sum(q2 * M_t, dim=2))
-    loss_mf_rand = (loss1 + 2*loss2)/2
+        loss1 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
+        loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
+
+    loss_mf_rand = (loss1 + 5*loss2)/2
 
     dev = loss_mf_rand.device
 
@@ -453,17 +454,17 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
     # make the matrix sums to 1
     sum_Q = Q.sum(dim=(1, 2), keepdim=True)
     dist.all_reduce(sum_Q)
-    Q /= (sum_Q )
+    Q /= sum_Q
 
     for it in range(nmb_iters):
         # normalize each row: total weight per prototype must be 1/K
         sum_of_rows = torch.sum(Q, dim=2, keepdim=True)
         dist.all_reduce(sum_of_rows)
-        Q /= (sum_of_rows )
+        Q /= sum_of_rows
         Q /= K
 
         # normalize each column: total weight per sample must be 1/B
-        Q /= (torch.sum(Q, dim=1, keepdim=True) )
+        Q /= torch.sum(Q, dim=1, keepdim=True)
         Q /= B
 
     Q *= B # the colomns must sum to 1 so that Q is an assignment
