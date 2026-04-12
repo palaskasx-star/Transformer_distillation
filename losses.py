@@ -274,7 +274,7 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.05, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
     
@@ -292,32 +292,26 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
     M_s = L2_dist(f_s, protos_norm)
-    M_s_detach = L2_dist(f_s, protos_norm.detach())
     #M_s = -cosine_kernel(f_s, protos_norm)
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     M_t = L2_dist(f_t, protos_norm)
-    M_t_detach = L2_dist(f_t, protos_norm.detach())
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
-    p1 = F.softmax(-M_s / temperature, dim=2)
-    p2 = F.softmax(-M_t / temperature, dim=2)
-
-    #p1_detach = F.softmax(-M_s_detach / temperature, dim=2)
-    #p2_detach = F.softmax(-M_t_detach / temperature, dim=2)
-    
     if distance == 'MSE':
         diff12 = q1 - p2
         diff21 = q2 - p1
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
+        p1 = F.softmax(-M_s / temperature, dim=2)
+        p2 = F.softmax(-M_t / temperature, dim=2)
+        
         loss1 = - 100*temperature**2*torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
-        #loss2 = - 100*temperature**2*torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
-        #loss3 = - 100*temperature**2*torch.mean(torch.sum(q1 * torch.log(p1_detach + 1e-6), dim=2))
+        loss2 = - 100*temperature**2*torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
 
-    #loss_mf_rand = (loss1 + loss2 + loss3)/2
-    loss_mf_rand = (loss1)/2
+    loss_mf_rand = (loss1 + 2*loss2)/2
+    #loss_mf_rand = (loss1 + 2*loss2)/2
 
     dev = loss_mf_rand.device
 
@@ -462,17 +456,17 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
     # make the matrix sums to 1
     sum_Q = Q.sum(dim=(1, 2), keepdim=True)
     dist.all_reduce(sum_Q)
-    Q /= (sum_Q+1e-8)
+    Q /= sum_Q
 
     for it in range(nmb_iters):
         # normalize each row: total weight per prototype must be 1/K
         sum_of_rows = torch.sum(Q, dim=2, keepdim=True)
         dist.all_reduce(sum_of_rows)
-        Q /= (sum_of_rows+1e-8)
+        Q /= sum_of_rows
         Q /= K
 
         # normalize each column: total weight per sample must be 1/B
-        Q /= (torch.sum(Q, dim=1, keepdim=True)+1e-8)
+        Q /= torch.sum(Q, dim=1, keepdim=True)
         Q /= B
 
     Q *= B # the colomns must sum to 1 so that Q is an assignment
@@ -601,4 +595,4 @@ def DKD_loss(logit_s, logit_t, gt_label, temp=1, gamma=1):
     loss_non =  (T_i * S_i).sum(dim=1).mean()
     loss_non = - gamma * (temp**2) * loss_non
 
-    return loss_t + loss_non
+    return loss_t + loss_non 
