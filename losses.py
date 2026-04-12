@@ -177,8 +177,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
     loss_KoLeo_patch_proto = sum(losses_KoLeo_proto[1]) / len(losses_KoLeo_proto[1])
     loss_KoLeo_rand_proto = sum(losses_KoLeo_proto[2]) / len(losses_KoLeo_proto[2])
 
-    return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_ran
-d_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
+    return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 def layer_mf_loss_patch(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8):
     # intra-image manifold loss
