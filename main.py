@@ -233,6 +233,8 @@ def get_args_parser():
 
     parser.add_argument('--freeze-prototypes', action='store_true',
                 help='Freeze prototypes so they are not updated during training.')
+
+    parser.add_argument('--temperature', default=0.1, type=float)
     return parser
 
 
