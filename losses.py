@@ -98,7 +98,7 @@ class DistillationLoss(nn.Module):
         loss_base = base_loss
         loss_dist = distillation_loss
         loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance, prototypes=self.prototypes, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, delta=self.delta, temperature=self.temperature)  # manifold distillation loss
-
+        print(loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto)
         return loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
