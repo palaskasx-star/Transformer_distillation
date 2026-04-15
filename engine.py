@@ -72,6 +72,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                 param_norm = torch.linalg.vector_norm(p.grad.detach(), ord=2)
                 total_grad_norm += param_norm.item() ** 2
         total_grad_norm = total_grad_norm ** 0.5
+        print(total_grad_norm)
         # =========================================================
 
         if torch.cuda.is_available():
