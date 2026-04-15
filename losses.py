@@ -303,6 +303,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     M_t = L2_dist(f_t, protos_norm)
     M_t_detach = L2_dist(f_t, protos_norm.detach())
+    print("Does M_t detatched requires gradients?", M_t_detach.requires_grad)
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
