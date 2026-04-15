@@ -277,18 +277,23 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
     print(F_s.shape)
+    print("Does p1 require gradients?", F_s.requires_grad)
     print(F_t.shape)
+    print("Does p2 require gradients?", F_t.requires_grad)
     
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
 
     f_s = projectors_net.projs[2](f_s)
+    print( projectors_net.projs[2])
 
     if normalize:
         f_s = normalize_mean_std(f_s)
         f_t = normalize_mean_std(f_t)
         protos_norm = normalize_mean_std(prototypes.protos[2].unsqueeze(0))
 
+    print(protos_norm.shape)
+    print("Does prototypes require gradients?", protos_norm.requires_grad)
     #loss_KoLeo_rand_data = KoLeoData(f_s)
     #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
 
