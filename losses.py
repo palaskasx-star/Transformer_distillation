@@ -98,7 +98,6 @@ class DistillationLoss(nn.Module):
         loss_base = base_loss
         loss_dist = distillation_loss
         loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance, prototypes=self.prototypes, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, delta=self.delta, temperature=self.temperature)  # manifold distillation loss
-        print(loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto)
         return loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
 
 
@@ -277,6 +276,8 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
 def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
+    print(F_s.shape)
+    print(F_t.shape)
     
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
@@ -313,6 +314,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
         print(temperature)
+        print(
         loss1 = - 100*temperature**2*torch.mean(torch.sum(p2_detach * torch.log(p1_detach + 1e-6), dim=2))
         loss2 = - 100*temperature**2*torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
         loss3 = - 100*temperature**2*torch.mean(torch.sum(q1 * torch.log(p1_detach + 1e-6), dim=2))
