@@ -296,10 +296,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     M_t_detach = L2_dist(f_t, protos_norm.detach())
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    print(M-t.shape)
     print(q2.shape)
-    print(q2.max())
-    print(q2.min())
-    print(q2.mean())
     """
     print(torch.mean(torch.sum(q2, dim=2).values))
     print(torch.mean(torch.sum(q2, dim=1).values))
