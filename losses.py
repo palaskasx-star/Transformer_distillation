@@ -483,6 +483,8 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
         Q /= B
 
     Q *= B # the colomns must sum to 1 so that Q is an assignment
+    print(Q.sum(dim=2).mean())
+    print(Q.sum(dim=1).mean())
     return Q.permute(0, 2, 1)
 
 def cosine_kernel(x, p):
