@@ -62,6 +62,18 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         loss_scaler(loss, optimizer, clip_grad=max_norm,
                     parameters=model.parameters(), create_graph=is_second_order)
 
+        # =========================================================
+        # INSERT THIS: Calculate the gradient magnitude (L2 Norm)
+        # =========================================================
+        total_grad_norm = 0.0
+        for p in model.parameters():
+            if p.grad is not None:
+                # p.grad contains the unscaled gradients here
+                param_norm = torch.linalg.vector_norm(p.grad.detach(), ord=2)
+                total_grad_norm += param_norm.item() ** 2
+        total_grad_norm = total_grad_norm ** 0.5
+        # =========================================================
+
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         if model_ema is not None:
