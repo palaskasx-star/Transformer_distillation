@@ -296,14 +296,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     M_t_detach = L2_dist(f_t, protos_norm.detach())
     #M_t = -cosine_kernel(f_t, protos_norm)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    print(M_t.shape)
-    print(q2.shape)
-    """
-    print(torch.mean(torch.sum(q2, dim=2).values))
-    print(torch.mean(torch.sum(q2, dim=1).values))
-    """
-    print(torch.mean(torch.sum(q2, dim=2)))
-    print(torch.mean(torch.sum(q2, dim=1)))
     
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
@@ -317,7 +309,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
-        #print(temperature)
         loss1 = - 100*temperature**2*torch.mean(torch.sum(p2_detach * torch.log(p1_detach + 1e-6), dim=2))
         loss2 = - 100*temperature**2*torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
         loss3 = - 100*temperature**2*torch.mean(torch.sum(q1 * torch.log(p1_detach + 1e-6), dim=2))
@@ -481,8 +472,6 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
         Q /= B
 
     Q *= B # the colomns must sum to 1 so that Q is an assignment
-    print(Q.sum(dim=2).mean())
-    print(Q.sum(dim=1).mean())
     return Q.permute(0, 2, 1)
 
 def cosine_kernel(x, p):
