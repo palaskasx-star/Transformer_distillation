@@ -311,6 +311,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     print(q2.max())
     print(q2.min())
     print(q2.mean())
+    print(torch.mean(torch.max(q2, dim=2).values))
 
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
