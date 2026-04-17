@@ -428,14 +428,14 @@ def main(args):
             self.prototypes_student = torch.nn.ModuleList()
 
             for proto_t_list, proto_s_list in zip(prototypes_teacher, prototypes_student):
-                # Wrap teacher prototypes
+                # Wrap teacher prototypes (keeping None exactly as they are)
                 proto_t_module = torch.nn.Module()
-                proto_t_module.protos = torch.nn.ParameterList([p for p in proto_t_list if p is not None])
+                proto_t_module.protos = torch.nn.ParameterList(proto_t_list)
                 self.prototypes_teacher.append(proto_t_module)
 
-                # Wrap student prototypes
+                # Wrap student prototypes (keeping None exactly as they are)
                 proto_s_module = torch.nn.Module()
-                proto_s_module.protos = torch.nn.ParameterList([p for p in proto_s_list if p is not None])
+                proto_s_module.protos = torch.nn.ParameterList(proto_s_list)
                 self.prototypes_student.append(proto_s_module)
                 
     custom_centroids = None
