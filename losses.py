@@ -299,18 +299,15 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     p1 = F.softmax(-M_s / temperature, dim=2)
     p2 = F.softmax(-M_t / temperature, dim=2)
 
-    p1_detach = F.softmax(-M_s_detach / temperature, dim=2)
-    p2_detach = F.softmax(-M_t_detach / temperature, dim=2)
-    
     if distance == 'MSE':
         diff12 = q1 - p2
         diff21 = q2 - p1
         loss12 = (diff12 * diff12).mean()
         loss21 = (diff21 * diff21).mean()
     elif distance == 'KL':
-        loss1 = - torch.mean(torch.sum(p2_detach * torch.log(p1_detach + 1e-6), dim=2))
+        loss1 = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2))
         loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
-        loss3 = - torch.mean(torch.sum(q1 * torch.log(p1_detach + 1e-6), dim=2))
+        loss3 = - torch.mean(torch.sum(q1 * torch.log(p1 + 1e-6), dim=2))
     
         loss12 = loss1 + loss2 + loss3  # Keep variable usage consistent
         loss21 = 0 
