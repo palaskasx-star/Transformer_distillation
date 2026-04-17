@@ -333,8 +333,8 @@ def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE',
         f_s = F_s[:, 1:, :].clone()
         f_t = F_t[:, 1:, :].clone()
 
-    protos_s = prototypes_student.protos[0].unsqueeze(0)
-    protos_t = prototypes_teacher.protos[0].unsqueeze(0)
+    protos_s = prototypes_student.protos[1].unsqueeze(0)
+    protos_t = prototypes_teacher.protos[1].unsqueeze(0)
 
     if normalize:
         f_s = normalize_mean_std(f_s)
