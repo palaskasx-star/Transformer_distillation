@@ -236,7 +236,7 @@ def get_args_parser():
 
     parser.add_argument('--temperature', default=0.1, type=float)
 
-    parser.add_argument('--grad_scale', default=0, type=float)
+    parser.add_argument('--grad-scale', default=0.0, type=float)
     return parser
 
 
