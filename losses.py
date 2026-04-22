@@ -57,7 +57,7 @@ class DistillationLoss(nn.Module):
         self.gamma = args.gamma
         self.delta = args.delta
 
-        self.temperature = args.temperatures
+        self.temperature = args.temperature
 
         self.grad_scale = args.grad_scale
 
