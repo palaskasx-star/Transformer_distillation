@@ -321,14 +321,11 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     # ==========================================
     # Pathway B: For Loss 1 and Loss 3 (10% Gradient)
     # ==========================================
-    # Replace your M_s_detach with M_s_scaled. 
-    # This allows 10% gradients to flow to protos, and 100% to f_s.
     M_s_scaled = L2_dist(f_s, protos_scaled)
     p1_scaled = F.softmax(-M_s_scaled / temperature, dim=2)
 
-    # Targets (teacher detached) remain the same
-    M_t_detach = L2_dist(f_t, protos_unscaled.detach())
-    p2_detach = F.softmax(-M_t_detach / temperature, dim=2)
+    M_t_scaled = L2_dist(f_t, pprotos_scaled)
+    p2_scaled = F.softmax(-M_t_scaled / temperature, dim=2)
     
     # ==========================================
     # Loss Calculation
@@ -343,7 +340,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         
     elif distance == 'KL':
         # Loss 1 & 3 use p1_scaled (routes through protos_scaled)
-        loss1 = - torch.mean(torch.sum(p2_detach * torch.log(p1_scaled + 1e-6), dim=2))
+        loss1 = - torch.mean(torch.sum(p2_scaled * torch.log(p1_scaled + 1e-6), dim=2))
         loss3 = - torch.mean(torch.sum(q1 * torch.log(p1_scaled + 1e-6), dim=2))
         
         # Loss 2 uses p2 (routes through protos_unscaled)
