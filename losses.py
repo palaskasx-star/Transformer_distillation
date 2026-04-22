@@ -324,7 +324,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     M_s_scaled = L2_dist(f_s, protos_scaled)
     p1_scaled = F.softmax(-M_s_scaled / temperature, dim=2)
 
-    M_t_scaled = L2_dist(f_t, pprotos_scaled)
+    M_t_scaled = L2_dist(f_t, protos_scaled)
     p2_scaled = F.softmax(-M_t_scaled / temperature, dim=2)
     
     # ==========================================
