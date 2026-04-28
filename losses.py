@@ -90,9 +90,41 @@ def review_feature_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, ab
     loss_review = 0.0
     for f_s, f_t in zip(feats_s, feats_t):
         # L2 normalize features before MSE (optional but recommended for Transformers)
-        f_s = F.normalize(f_s, dim=-1, p=2)
-        f_t = F.normalize(f_t, dim=-1, p=2)
-        
-        loss_review += F.mse_loss(f_s, f_t, reduction='mean')
+        loss_review += hcl_transformer(f_t, f_s)
 
     return loss_review
+
+def hcl_transformer(t_feat, s_feat):
+    """
+    Transformer equivalent of Hierarchical Context Loss (HCL).
+    Expects features without the CLS token, shape: [N, L, C].
+    """
+    assert t_feat.shape == s_feat.shape
+    N, L, C = t_feat.shape
+    
+    # 1. Base loss (flat MSE on the sequence)
+    loss = F.mse_loss(t_feat, s_feat, reduction='mean')
+    
+    # 2. Reshape to 2D spatial grid for multi-scale pooling
+    H = int(L ** 0.5)
+    W = H
+    if H * W != L:
+        raise ValueError(f"Sequence length {L} is not a perfect square. Did you forget to remove the [CLS] token?")
+        
+    t_grid = t_feat.transpose(1, 2).reshape(N, C, H, W)
+    s_grid = s_feat.transpose(1, 2).reshape(N, C, H, W)
+    
+    # 3. Multi-scale hierarchical pooling (4x4, 2x2, 1x1)
+    cnt = 1.0
+    tot = 1.0
+    for level in [4, 2, 1]:
+        if level >= H:
+            continue
+        tmp_t_feat = F.adaptive_avg_pool2d(t_grid, (level, level))
+        tmp_s_feat = F.adaptive_avg_pool2d(s_grid, (level, level))
+        cnt /= 2.0
+        loss += F.mse_loss(tmp_t_feat, tmp_s_feat, reduction='mean') * cnt
+        tot += cnt
+        
+    loss = loss / tot
+    return loss
