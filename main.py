@@ -429,6 +429,7 @@ def main(args):
 
             return y, x
     """
+    """
     class ABF(torch.nn.Module):
         def __init__(self, student_dim, teacher_dim, fuse):
             super(ABF, self).__init__()
@@ -474,92 +475,89 @@ def main(args):
             y = self.proj(x)
 
             return y, x
-            
-    class ProtoProjectorWrapper(torch.nn.Module):
-        def __init__(self, prototypes, abfs):
-            super().__init__()
-            self.abfs = torch.nn.ModuleList(abfs)
-            
-            # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
-            self.prototypes = torch.nn.ModuleList()
-
-            for proto_list  in prototypes:
-                # Wrap each group of 3 prototypes in a submodule with ParameterList
-                proto_module = torch.nn.Module()
-                proto_module.protos = torch.nn.ParameterList(proto_list)
-                self.prototypes.append(proto_module)
+    """
+    class TransformerABF(nn.Module):
+        def __init__(self, in_channel, out_channel, mid_channel, is_fuse=True):
+            super(TransformerABF, self).__init__()
+            self.is_fuse = is_fuse
+    
+            self.proj_first = nn.Sequential(
+                nn.Linear(in_channel, mid_channel, bias=False),
+                nn.LayerNorm(mid_channel)
+            )
+    
+            self.proj_last = nn.Sequential(
+                nn.Linear(mid_channel, out_channel, bias=False),
+                nn.LayerNorm(out_channel)
+            )
+    
+            self.att_proj = None if not is_fuse else nn.Sequential(
+                nn.Linear(mid_channel * 2, 2),
+                nn.Sigmoid()
+            )
+            self.__init_weights()
+    
+        def __init_weights(self):
+            nn.init.kaiming_uniform_(self.proj_first[0].weight, a=1)
+            nn.init.kaiming_uniform_(self.proj_last[0].weight, a=1)
+    
+        def forward(self, x, y=None):
+            x = self.proj_first(x)
+    
+            if self.att_proj is not None and y is not None:
+                # Assuming x and y have the same sequence length (standard ViT)
+                z = torch.cat([x, y], dim=-1)
+                z = self.att_proj(z)
+                x = (x * z[..., 0:1]) + (y * z[..., 1:2])
+                
+            y_out = self.proj_last(x)
+            return y_out, x
+                
+        class ProtoProjectorWrapper(torch.nn.Module):
+            def __init__(self, prototypes, abfs):
+                super().__init__()
+                self.abfs = torch.nn.ModuleList(abfs)
+                
+                # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
+                self.prototypes = torch.nn.ModuleList()
+    
+                for proto_list  in prototypes:
+                    # Wrap each group of 3 prototypes in a submodule with ParameterList
+                    proto_module = torch.nn.Module()
+                    proto_module.protos = torch.nn.ParameterList(proto_list)
+                    self.prototypes.append(proto_module)
 
     if args.use_prototypes:
+        # Extract feature dimensions dynamically
         images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
-
         with torch.no_grad():
-            # Teacher
             _, features_teacher = teacher_model(images)
-            # Student
             _, features_student = model(images)
-
-        prototypes = []
+    
         abfs = []
-        
-        for i, feat in enumerate(args.s_id):
-            feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
-            feature_dim_student = features_student[args.s_id[i]].shape[2]
-
-            abf = ABF(student_dim=feature_dim_student, teacher_dim=feature_dim_teacher, fuse=i < len(args.s_id) - 1)
-            abfs.append(abf.to(device))
-
-            # Create 3 prototype matrices and 3 projectors for each i
-            proto_list = []
-            if args.gamma == 0.0:
-                proto_list.append(None)
-            else:
-                # Initialize prototype with uniform distribution
-                proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                proto = torch.nn.Parameter(proto)
-                proto_list.append(proto)
-
+        # Iterate through the chosen layer IDs
+        for i in range(len(args.s_id)):
+            t_idx = args.t_id[i]
+            s_idx = args.s_id[i]
             
-            if args.distillation_beta == 0.0:
-                proto_list.append(None)
-            else:
-                # Initialize prototype with uniform distribution
-                proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                proto = torch.nn.Parameter(proto)
-                proto_list.append(proto)
-                
-            if args.delta == 0.0:
-                proto_list.append(None)
-            else:
-                # Initialize prototype with uniform distribution
-                proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
-                _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                proto = torch.nn.Parameter(proto)
-                proto_list.append(proto)
-
-
-            prototypes.append(proto_list)
-
-        proto_proj_module = ProtoProjectorWrapper(prototypes, abfs).to(device)
-        model.add_module("proto_proj_module", proto_proj_module)
-    else:
-        prototypes = []
-        abfs = []
-        for i, feat in enumerate(args.s_id):
-            proto_list = []
-            for j in range(3):
-                proto_list.append(None)
-            prototypes.append(proto_list)
-            abfs.append([])
-
-        proto_proj_module = ProtoProjectorWrapper(prototypes, abfs).to(device)
-        model.add_module("proto_proj_module", proto_proj_module)
-
-
+            feature_dim_teacher = features_teacher[t_idx].shape[-1]
+            feature_dim_student = features_student[s_idx].shape[-1]
+    
+            # In ReviewKD, fusion is applied to all layers EXCEPT the deepest one.
+            # Assuming args.s_id is ordered shallow->deep (e.g., [3, 7, 11]), 
+            # the last element is the deepest layer.
+            is_fuse = (i != len(args.s_id) - 1)
+            
+            abf = TransformerABF(
+                in_channel=feature_dim_student, 
+                out_channel=feature_dim_teacher, 
+                mid_channel=args.mid_channel, 
+                is_fuse=is_fuse
+            )
+            abfs.append(abf)
+    
+        # Attach the ModuleList directly to the model so DDP and optimizers can find it
+        model.abfs = nn.ModuleList(abfs).to(device)
 
     model_ema = None
     if args.model_ema:
@@ -594,7 +592,9 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, model.module.proto_proj_module.prototypes, model.module.proto_proj_module.abfs, args)
+    # Use model.module.abfs if using DDP, otherwise model.abfs
+    student_abfs = model.module.abfs if args.distributed else model.abfs
+    criterion = DistillationLoss(criterion, teacher_model, student_abfs, args)
 
 
     #output_dir = Path(args.output_dir)
