@@ -19,18 +19,24 @@ from typing import Optional
 
 
 def register_forward(model, model_name, out_indices ):
-    if model_name.split('_')[0] == 'deit' or model_name.split('_')[0] == 'deit3':
-        model.forward_features = MethodType(vit_forward_features, model)
-        model.forward = MethodType(vit_forward, model)
-    elif model_name.split('_')[0] == 'cait':
-        model.forward_features = MethodType(cait_forward_features, model)
-        model.forward = MethodType(cait_forward, model)
-    elif model_name.split('_')[0] == 'regnety':
-        model.forward_features = MethodType(regnet_forward_features, model)
-        model.forward = MethodType(regnet_forward, model)
-    elif 'dinov3' in model_name.lower():
+    # Check for keywords anywhere in the name
+    model_name_lower = model_name.lower()
+    
+    if any(x in model_name_lower.lower() for x in ['dinov3', 'eva02']):
         model.forward_features = MethodType(dinov3_forward_features, model)
         model.forward = MethodType(dinov3_forward, model)
+    elif any(x in model_name_lower for x in ['deit', 'deit3', 'dinov2', 'dino']):
+        model.forward_features = MethodType(vit_forward_features, model)
+        model.forward = MethodType(vit_forward, model)
+    elif 'cait' in model_name_lower:
+        model.forward_features = MethodType(cait_forward_features, model)
+        model.forward = MethodType(cait_forward, model)
+    elif 'regnety' in model_name_lower:
+        model.forward_features = MethodType(regnet_forward_features, model)
+        model.forward = MethodType(regnet_forward, model)
+    elif 'swin' in model_name_lower:
+        model.forward_features = MethodType(swin_forward_features, model)
+        model.forward = MethodType(swin_forward, model)
     else:
         raise RuntimeError(f'Not defined customized method forward for model {model_name}')
 
@@ -38,6 +44,7 @@ def register_forward(model, model_name, out_indices ):
         model.out_indices = set(out_indices)
     else:
         model.out_indices = set(range(len(model.blocks)))
+        
 
 def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
     """Forward pass through feature extraction layers.
@@ -164,25 +171,24 @@ def vit_forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None,
 
 # cait
 def cait_forward_features(self, x, require_feat: bool = False):
-    B = x.shape[0]
     x = self.patch_embed(x)
-
-    cls_tokens = self.cls_token.expand(B, -1, -1)
-
     x = x + self.pos_embed
     x = self.pos_drop(x)
 
     block_outs = []
-    for i, blk in enumerate(self.blocks):
+    for idx, blk in enumerate(self.blocks):
         x = blk(x)
-        block_outs.append(x)
+        if idx in self.out_indices:
+            block_outs.append(x)
+        else:
+            block_outs.append([])
+    cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
 
     for i, blk in enumerate(self.blocks_token_only):
         cls_tokens = blk(x, cls_tokens)
-
     x = torch.cat((cls_tokens, x), dim=1)
-
     x = self.norm(x)
+
     if require_feat:
         return x[:, 0], block_outs
     else:
@@ -239,5 +245,42 @@ def regnet_forward(self, x, require_feat: bool = True):
         return self.forward_features(x)
 
 
+def swin_forward_features(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
+    """
+    Custom forward_features for Swin Transformer V2.
+    Captures intermediate outputs after each stage (layer).
+    """
+    x = self.patch_embed(x)
+    block_outs = []
+    
+    for idx, stage in enumerate(self.layers):
+        x = stage(x)
+        if idx in self.out_indices:
+            # Swin outputs feature maps as (B, H, W, C). 
+            # If your KD framework expects a sequence of tokens (B, N, C) like ViT, 
+            # we flatten the spatial dimensions.
+            B, H, W, C = x.shape
+            feat = x.view(B, H * W, C)
+            block_outs.append(feat)
+        else:
+            block_outs.append([])
+            
+    x = self.norm(x)
+    
+    if require_feat:
+        return x, block_outs
+    return x, block_outs
 
 
+def swin_forward(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
+    """Forward pass for Swin Transformer V2."""
+    x, block_outs = self.forward_features(x, require_feat=True)
+    
+    # Swin typically outputs NHWC before the head. 
+    # timm's forward_head handles the pooling and flattening.
+    x = self.forward_head(x)
+    
+    if require_feat:
+        return x, block_outs
+    else:
+        return x, block_outs
