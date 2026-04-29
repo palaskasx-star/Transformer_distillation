@@ -225,7 +225,7 @@ def main(args):
     np.random.seed(seed)
     # random.seed(seed)
 
-    cud.nn.benchmark = True
+    cudnn.benchmark = True
 
     dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
     dataset_val, _ = build_dataset(is_train=False, args=args)
