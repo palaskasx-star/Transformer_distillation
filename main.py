@@ -261,6 +261,9 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=True,
     )
+    
+    if args.ThreeAugment:
+        data_loader_train.dataset.transform = new_data_aug_generator(args)
 
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val, sampler=sampler_val,
@@ -280,9 +283,13 @@ def main(args):
 
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
-    extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{num_tasks*args.batch_size}_proj_{args.projector_type}_normalize_{args.normalize}_distance_{args.distance}_distype_{args.distillation_type}_cj_{args.color_jitter}_alpha_{args.distillation_alpha}_beta_{args.distillation_beta}_gamma_{args.gamma}_delta_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
-    if args.use_prototypes:
-        extra_info += f"_prototypes_{args.prototypes_number}"
+    if args.distillation_type != 'none':
+        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_d_{args.distance}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_b_{args.distillation_beta}_g_{args.gamma}_d_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
+        if args.use_prototypes:
+            extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
+    else:
+        extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_cj_{args.color_jitter}"
+
     output_dir = output_dir / extra_info
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -337,44 +344,57 @@ def main(args):
 
     model.to(device)
 
-    teacher_model = None
     if args.distillation_type != 'none':
         assert args.teacher_path, 'need to specify teacher-path when using distillation'
         print(f"Creating teacher model: {args.teacher_model}")
-        teacher_model = create_model(
-            args.teacher_model,
-            pretrained=False,
-            num_classes=args.nb_classes,
-            #global_pool='avg',
-        )
-        register_forward(teacher_model, args.teacher_model, args.t_id)
 
-        if args.teacher_path.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.teacher_path, map_location='cpu', check_hash=True)
+        if 'swin' in args.teacher_model.lower():
+            teacher_model = create_model(
+                args.teacher_model,
+                pretrained=True,        # Downloads official weights
+                num_classes=args.nb_classes,
+                # checkpoint_path=None  # Ensure this is NOT used to avoid local mismatch
+            )
+            register_forward(teacher_model, args.teacher_model, args.t_id)
+            teacher_model.to(device)
+            teacher_model.eval()
+
+            print(f"Teacher {args.teacher_model} initialized with official timm pretrained weights.")
         else:
-            checkpoint = torch.load(args.teacher_path, map_location='cpu')
-
-        if 'model' in checkpoint:
-            state_dict = checkpoint['model']
-        elif 'state_dict' in checkpoint:
-            state_dict = checkpoint['state_dict']
-        else:
-            state_dict = checkpoint
-            
-        # process distributed model
-        from collections import OrderedDict
-        new_state_dict = OrderedDict()
-        for k in state_dict:
-            if k[:7] != 'module.':
-                new_state_dict = state_dict
-                break
-            new_key = k[7:]
-            new_state_dict[new_key] = state_dict[k]
-
-        teacher_model.load_state_dict(new_state_dict)
-        teacher_model.to(device)
-        teacher_model.eval()
+            teacher_model = create_model(
+                args.teacher_model,
+                pretrained=False,
+                num_classes=args.nb_classes,
+                #global_pool='avg',
+            )
+            register_forward(teacher_model, args.teacher_model, args.t_id)
+    
+            if args.teacher_path.startswith('https'):
+                checkpoint = torch.hub.load_state_dict_from_url(
+                    args.teacher_path, map_location='cpu', check_hash=True)
+            else:
+                checkpoint = torch.load(args.teacher_path, map_location='cpu')
+    
+            if 'model' in checkpoint:
+                state_dict = checkpoint['model']
+            elif 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                state_dict = checkpoint
+                
+            # process distributed model
+            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+            for k in state_dict:
+                if k[:7] != 'module.':
+                    new_state_dict = state_dict
+                    break
+                new_key = k[7:]
+                new_state_dict[new_key] = state_dict[k]
+    
+            teacher_model.load_state_dict(new_state_dict, strict=False)
+            teacher_model.to(device)
+            teacher_model.eval()
 
     """
     class ABF(torch.nn.Module):
