@@ -225,7 +225,7 @@ def main(args):
     np.random.seed(seed)
     # random.seed(seed)
 
-    cudtorch.nn.benchmark = True
+    cud.nn.benchmark = True
 
     dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
     dataset_val, _ = build_dataset(is_train=False, args=args)
@@ -332,7 +332,7 @@ def main(args):
         # only the position tokens are interpolated
         pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
         pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
-        pos_tokens = torch.torch.nn.functional.interpolate(
+        pos_tokens = torch.nn.functional.interpolate(
             pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
         pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
         new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
@@ -395,11 +395,11 @@ def main(args):
             teacher_model.eval()
 
     """
-    class ABF(torch.torch.nn.Module):
+    class ABF(torch.nn.Module):
         def __init__(self, student_dim, teacher_dim, fuse):
             super(ABF, self).__init__()
             
-            self.conv2 = torch.torch.nn.Conv2d(
+            self.conv2 = torch.nn.Conv2d(
                 in_channels=student_dim,
                 out_channels=teacher_dim,
                 kernel_size=3,
@@ -409,12 +409,12 @@ def main(args):
             )
             
             # Replicating ParamAttr(initializer=KaimingNormal())
-            torch.torch.nn.init.kaiming_normal_(self.conv2.weight, mode='fan_out', nonlinearity='relu')
+            torch.nn.init.kaiming_normal_(self.conv2.weight, mode='fan_out', nonlinearity='relu')
             
             if fuse:
-                self.att_conv = torch.torch.nn.Sequential(
-                    torch.torch.nn.Conv2d(student_dim * 2, 2, kernel_size=1),
-                    torch.torch.nn.Sigmoid(),
+                self.att_conv = torch.nn.Sequential(
+                    torch.nn.Conv2d(student_dim * 2, 2, kernel_size=1),
+                    torch.nn.Sigmoid(),
                 )
             else:
                 self.att_conv = None
@@ -449,21 +449,21 @@ def main(args):
             return y, x
     """
     """
-    class ABF(torch.torch.nn.Module):
+    class ABF(torch.nn.Module):
         def __init__(self, student_dim, teacher_dim, fuse):
             super(ABF, self).__init__()
             
-            self.proj = torch.torch.nn.Linear(student_dim, teacher_dim, bias=False)
+            self.proj = torch.nn.Linear(student_dim, teacher_dim, bias=False)
 
             # Replicating ParamAttr(initializer=KaimingNormal())
-            torch.torch.nn.init.kaiming_normal_(self.proj.weight, mode='fan_out', nonlinearity='relu')
+            torch.nn.init.kaiming_normal_(self.proj.weight, mode='fan_out', nonlinearity='relu')
 
-            #self.conv2_bn = torch.torch.nn.BatchNorm2d(teacher_dim)
+            #self.conv2_bn = torch.nn.BatchNorm2d(teacher_dim)
             
             if fuse:
-                self.att_conv = torch.torch.nn.Sequential(
-                    torch.torch.nn.Conv2d(student_dim * 2, 2, kernel_size=1),
-                    torch.torch.nn.Sigmoid(),
+                self.att_conv = torch.nn.Sequential(
+                    torch.nn.Conv2d(student_dim * 2, 2, kernel_size=1),
+                    torch.nn.Sigmoid(),
                 )
             else:
                 self.att_conv = None
@@ -532,18 +532,18 @@ def main(args):
             y_out = self.proj_last(x)
             return y_out, x
                 
-        class ProtoProjectorWrapper(torch.torch.nn.Module):
+        class ProtoProjectorWrapper(torch.nn.Module):
             def __init__(self, prototypes, abfs):
                 super().__init__()
-                self.abfs = torch.torch.nn.ModuleList(abfs)
+                self.abfs = torch.nn.ModuleList(abfs)
                 
                 # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
-                self.prototypes = torch.torch.nn.ModuleList()
+                self.prototypes = torch.nn.ModuleList()
     
                 for proto_list  in prototypes:
                     # Wrap each group of 3 prototypes in a submodule with ParameterList
-                    proto_module = torch.torch.nn.Module()
-                    proto_module.protos = torch.torch.nn.ParameterList(proto_list)
+                    proto_module = torch.nn.Module()
+                    proto_module.protos = torch.nn.ParameterList(proto_list)
                     self.prototypes.append(proto_module)
 
     if args.use_prototypes:
@@ -589,7 +589,7 @@ def main(args):
 
     model_without_ddp = model
     if args.distributed:
-        model = torch.torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
@@ -609,7 +609,7 @@ def main(args):
     elif args.smoothing:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
-        criterion = torch.torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.CrossEntropyLoss()
 
     # Use model.module.abfs if using DDP, otherwise model.abfs
     student_abfs = model.module.abfs if args.distributed else model.abfs
