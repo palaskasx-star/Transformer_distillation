@@ -30,6 +30,7 @@ from samplers import RASampler
 import utils
 
 from torch.utils.tensorboard import SummaryWriter
+import customized_models
 
 # TensorBoard setup
 def get_writer(output_dir):
