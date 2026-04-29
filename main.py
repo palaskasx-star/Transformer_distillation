@@ -210,6 +210,7 @@ def get_args_parser():
     parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
                 help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
     
+    parser.add_argument('--mid-channel', default=384, type=int)
     return parser
 
 
