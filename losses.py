@@ -56,7 +56,6 @@ class DistillationLoss(nn.Module):
         self.base_criterion = base_criterion
         self.teacher_model = teacher_model
         
-        # NEW: Store the reference to the model's projectors
         self.crd_projectors = crd_projectors 
         
         self.distillation_type = args.distillation_type
@@ -64,8 +63,10 @@ class DistillationLoss(nn.Module):
         self.layer_ids_s = args.s_id
         self.layer_ids_t = args.t_id
 
+        # Pass device information if available, or assume it will be handled by the caller
         self.crd_loss = CRDLoss(args)
-        self.crd_weight = args.crd_weight 
+        
+        self.crd_weight = args.crd_weight
 
     def forward(self, inputs, outputs, labels, batch_idx):
         block_outs_s = outputs[1]
