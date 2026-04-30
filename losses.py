@@ -146,17 +146,6 @@ class ContrastLoss(nn.Module):
         log_D0 = torch.div(P_neg.clone().fill_(m * Pn), P_neg.add(m * Pn + eps)).log_()
         return - (log_D1.sum(0) + log_D0.view(-1, 1).sum(0)) / bsz
 
-class Embed(nn.Module):
-    def __init__(self, dim_in=1024, dim_out=128):
-        super(Embed, self).__init__()
-        self.linear = nn.Linear(dim_in, dim_out)
-        self.l2norm = Normalize(2)
-
-    def forward(self, x):
-        x = x.view(x.shape[0], -1)
-        x = self.linear(x)
-        return self.l2norm(x)
-
 class Normalize(nn.Module):
     def __init__(self, power=2):
         super(Normalize, self).__init__()
