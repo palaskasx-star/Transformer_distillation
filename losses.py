@@ -14,84 +14,51 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-import torch.distributed as dist
+import math
 
-class ScaleGradient(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, scale):
-        ctx.scale = scale
-        return x.clone()
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output * ctx.scale, None
-
+eps = 1e-7
 
 class DistillationLoss(nn.Module):
     """
-    This module wraps a standard criterion and adds an extra knowledge distillation loss by
-    taking a teacher model prediction and using it as additional supervision.
+    Wraps standard criterion and adds CRD knowledge distillation.
     """
-
-    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, prototypes: None, projectors_nets: None, args):
+    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, args):
         super().__init__()
         self.base_criterion = base_criterion
         self.teacher_model = teacher_model
-        assert args.distillation_type in ['none', 'soft', 'hard', 'DKD']
+        
         self.distillation_type = args.distillation_type
         self.tau = args.distillation_tau
-
         self.layer_ids_s = args.s_id
         self.layer_ids_t = args.t_id
-        self.alpha = args.distillation_alpha
-        self.beta = args.distillation_beta
-        self.K = args.K
 
-        self.normalize = args.normalize
-        self.distance = args.distance
+        # Initialize CRD Loss
+        # Assuming args contains n_data, s_dim, t_dim, feat_dim, nce_k, nce_t, nce_m
+        self.crd_loss = CRDLoss(args)
+        
+        self.crd_weight = args.crd_weight # e.g., 0.8
 
-        self.prototypes = prototypes
-        self.projectors_nets = projectors_nets
-
-        self.beta = args.distillation_beta
-        self.gamma = args.gamma
-        self.delta = args.delta
-
-        self.temperature = args.temperature
-
-        self.grad_scale = args.grad_scale
-
-        self.world_size = args.world_size
-
-        self.KoLeoData = KoLeoLossData()
-        self.KoLeoPrototypes = KoLeoLossPrototypes()
-
-    def forward(self, inputs, outputs, labels):
+    def forward(self, inputs, outputs, labels, batch_idx):
         """
-        Args:
-            inputs: The original inputs that are feed to the teacher model
-            outputs: the outputs of the model to be trained. It is expected to be
-                either a Tensor, or a Tuple[Tensor, Tensor], with the original output
-                in the first position and the distillation predictions as the second output
-            labels: the labels for the base criterion
+        Note: batch_idx is REQUIRED for CRD to update the memory bank.
         """
-        # only consider the case of [outputs, block_outs_s] or [(outputs, outputs_kd), block_outs_s]
-        # i.e. 'require_feat' is always True when we compute loss
         block_outs_s = outputs[1]
         if isinstance(outputs[0], torch.Tensor):
-            outputs = outputs_kd = outputs[0]
+            outputs_kd = outputs[0]
+            outputs = outputs[0]
         else:
             outputs, outputs_kd = outputs[0]
 
         base_loss = self.base_criterion(outputs, labels)
 
         if self.distillation_type == 'none':
-            return base_loss, torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.), torch.tensor(0.)
+            return base_loss, torch.tensor(0.), torch.tensor(0.)
 
-        # don't backprop throught the teacher
         with torch.no_grad():
             teacher_outputs, block_outs_t = self.teacher_model(inputs)
 
+        # Standard KD (Logit matching)
         if self.distillation_type == 'soft':
             T = self.tau
             distillation_loss = F.kl_div(
@@ -100,532 +67,210 @@ class DistillationLoss(nn.Module):
                 reduction='batchmean',
                 log_target=True
             ) * (T * T)
-        elif self.distillation_type == 'DKD':
-            T = self.tau
-            distillation_loss = DKD_loss(outputs_kd, teacher_outputs, labels, temp=T, gamma=1)
-            #base_loss = 2*base_loss
         elif self.distillation_type == 'hard':
             distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
-
-        loss_base = base_loss
-        loss_dist = distillation_loss
-        loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto = mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance, prototypes=self.prototypes, projectors_nets=self.projectors_nets, KoLeoData=self.KoLeoData, KoLeoPrototypes=self.KoLeoPrototypes, world_size=self.world_size, beta=self.beta, gamma=self.gamma, delta=self.delta, temperature=self.temperature, grad_scale=self.grad_scale)  # manifold distillation loss
-        return loss_base, loss_dist, loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
-
-
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, KoLeoData=None, KoLeoPrototypes=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, temperature=0.1, grad_scale=0.0):
-    losses = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
-    losses_KoLeo_data = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
-    losses_KoLeo_proto = [[], [], []]  # loss_mf_cls, loss_mf_patch, loss_mf_rand
-
-    for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
-        extra_tk_num = block_outs_s[id_s].shape[1] - block_outs_t[id_t].shape[1]
-        F_s = block_outs_s[id_s][:, extra_tk_num:, :]  # remove additional tokens
-        F_t = block_outs_t[id_t]
-
-        dev = F_t.device
-
-        if max_patch_num > 0:
-            F_s = merge(F_s, max_patch_num)
-            F_t = merge(F_t, max_patch_num)
-        if prototypes[idx].protos[0] is not None or prototypes[idx].protos[1] is not None or prototypes[idx].protos[2] is not None:
-            if beta == 0.0 or id_s != 11:
-                loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = layer_mf_loss_prototypes_cls(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size, temperature=temperature)
-                
-            if gamma == 0.0:
-                loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = layer_mf_loss_prototypes_patch(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size, temperature=temperature)    
-            
-            if delta == 0.0:
-                loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_prototypes_rand(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], KoLeoData=KoLeoData, KoLeoPrototypes=KoLeoPrototypes, world_size=world_size, temperature=temperature, grad_scale=grad_scale)
-
         else:
-            if beta == 0.0 or id_s != 11:
-                loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_cls, loss_KoLeo_cls_data, loss_KoLeo_cls_proto = layer_mf_loss_cls(
-                    F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
-                
-            if gamma == 0.0:
-                loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_patch, loss_KoLeo_patch_data, loss_KoLeo_patch_proto = layer_mf_loss_patch(
-                    F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)    
-            
-            if delta == 0.0:
-                loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_rand(
-                    F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
+            distillation_loss = torch.tensor(0., device=outputs.device)
 
-        losses[0].append(loss_mf_cls)
-        losses[1].append(loss_mf_patch)
-        losses[2].append(loss_mf_rand)
-        
-        losses_KoLeo_data[0].append(loss_KoLeo_cls_data)
-        losses_KoLeo_data[1].append(loss_KoLeo_patch_data)
-        losses_KoLeo_data[2].append(loss_KoLeo_rand_data)
+        # CRD Feature Distillation
+        # Extract the [CLS] token (or global pooled feature) from the chosen layer
+        f_s = block_outs_s[self.layer_ids_s[0]][:, 0, :] # Shape: [B, C_s]
+        f_t = block_outs_t[self.layer_ids_t[0]][:, 0, :] # Shape: [B, C_t]
 
-        losses_KoLeo_proto[0].append(loss_KoLeo_cls_proto)
-        losses_KoLeo_proto[1].append(loss_KoLeo_patch_proto)
-        losses_KoLeo_proto[2].append(loss_KoLeo_rand_proto)
-        
-    loss_mf_cls = sum(losses[0]) / len(losses[0])
-    loss_mf_patch = sum(losses[1]) / len(losses[1])
-    loss_mf_rand = sum(losses[2]) / len(losses[2])
-    
-    loss_KoLeo_cls_data = sum(losses_KoLeo_data[0]) / len(losses_KoLeo_data[0])
-    loss_KoLeo_patch_data = sum(losses_KoLeo_data[1]) / len(losses_KoLeo_data[1])
-    loss_KoLeo_rand_data = sum(losses_KoLeo_data[2]) / len(losses_KoLeo_data[2])
+        crd_loss = self.crd_loss(f_s, f_t, batch_idx)
 
-    loss_KoLeo_cls_proto = sum(losses_KoLeo_proto[0]) / len(losses_KoLeo_proto[0])
-    loss_KoLeo_patch_proto = sum(losses_KoLeo_proto[1]) / len(losses_KoLeo_proto[1])
-    loss_KoLeo_rand_proto = sum(losses_KoLeo_proto[2]) / len(losses_KoLeo_proto[2])
+        total_loss = base_loss + distillation_loss + (self.crd_weight * crd_loss)
 
-    return loss_mf_patch, loss_mf_cls, loss_mf_rand, loss_KoLeo_patch_data, loss_KoLeo_cls_data, loss_KoLeo_rand_data, loss_KoLeo_patch_proto, loss_KoLeo_cls_proto, loss_KoLeo_rand_proto
+        return total_loss, base_loss, distillation_loss, crd_loss
 
-def layer_mf_loss_patch(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8):
-    # intra-image manifold loss
-    f_s = F_s.clone()
-    f_t = F_t.clone()
+# --------------------------------------------------------
+# CRD Core Components (from previous implementation)
+# --------------------------------------------------------
 
-    if normalize:
-        f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
-        f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
+class CRDLoss(nn.Module):
+    def __init__(self, opt):
+        super(CRDLoss, self).__init__()
+        self.embed_s = Embed(opt.s_dim, opt.feat_dim)
+        self.embed_t = Embed(opt.t_dim, opt.feat_dim)
+        self.contrast = ContrastMemory(opt.feat_dim, opt.n_data, opt.nce_k, opt.nce_t, opt.nce_m)
+        self.criterion_t = ContrastLoss(opt.n_data)
+        self.criterion_s = ContrastLoss(opt.n_data)
 
+    def forward(self, f_s, f_t, idx, contrast_idx=None):
+        f_s = self.embed_s(f_s)
+        f_t = self.embed_t(f_t)
+        out_s, out_t = self.contrast(f_s, f_t, idx, contrast_idx)
+        s_loss = self.criterion_s(out_s)
+        t_loss = self.criterion_t(out_t)
+        return s_loss + t_loss
 
-    f_s = F.normalize(f_s, dim=-1, p=2)
-    f_t = F.normalize(f_t, dim=-1, p=2)
+class ContrastLoss(nn.Module):
+    def __init__(self, n_data):
+        super(ContrastLoss, self).__init__()
+        self.n_data = n_data
 
+    def forward(self, x):
+        bsz = x.shape[0]
+        m = x.size(1) - 1
+        Pn = 1 / float(self.n_data)
+        P_pos = x.select(1, 0)
+        log_D1 = torch.div(P_pos, P_pos.add(m * Pn + eps)).log_()
+        P_neg = x.narrow(1, 1, m)
+        log_D0 = torch.div(P_neg.clone().fill_(m * Pn), P_neg.add(m * Pn + eps)).log_()
+        return - (log_D1.sum(0) + log_D0.view(-1, 1).sum(0)) / bsz
 
-    M_s = f_s.bmm(f_s.transpose(-1, -2))
-    M_t = f_t.bmm(f_t.transpose(-1, -2))
+class Embed(nn.Module):
+    def __init__(self, dim_in=1024, dim_out=128):
+        super(Embed, self).__init__()
+        self.linear = nn.Linear(dim_in, dim_out)
+        self.l2norm = Normalize(2)
 
+    def forward(self, x):
+        x = x.view(x.shape[0], -1)
+        x = self.linear(x)
+        return self.l2norm(x)
 
-    if distance == 'MSE':
-        M_diff = M_t - M_s
-        loss_mf_patch = (M_diff * M_diff).mean()
-    elif distance == 'KL':
-        M_s = (M_s + 1) / 2
-        M_t = (M_t + 1) / 2
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
-        loss_mf_patch =  -(M_t * torch.log(M_s + eps)).mean()
-    
-    dev = loss_mf_patch.device
-    
-    return loss_mf_patch, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+class Normalize(nn.Module):
+    def __init__(self, power=2):
+        super(Normalize, self).__init__()
+        self.power = power
 
-def layer_mf_loss_cls(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8):
-
-    # cls token loss
-    f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
-    f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()  # select only the cls token
-
-    if normalize:
-        f_s = ((f_s - f_s.mean(dim=1, keepdim=True)) / (f_s.std(dim=1, keepdim=True) + eps))
-        f_t = ((f_t - f_t.mean(dim=1, keepdim=True)) / (f_t.std(dim=1, keepdim=True) + eps))
-
-    f_s = F.normalize(f_s, dim=-1, p=2)
-    f_t = F.normalize(f_t, dim=-1, p=2)
-    
-
-    M_s = f_s.bmm(f_s.transpose(-1, -2))
-    M_t = f_t.bmm(f_t.transpose(-1, -2))
+    def forward(self, x):
+        norm = x.pow(self.power).sum(1, keepdim=True).pow(1. / self.power)
+        return x.div(norm)
 
 
-    if distance == 'MSE':
-        M_diff = M_t - M_s
-        loss_mf_cls = (M_diff * M_diff).mean()
-    elif distance == 'KL':
-        M_s = (M_s + 1) / 2
-        M_t = (M_t + 1) / 2
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
-        loss_mf_cls =  -(M_t * torch.log(M_s + eps)).mean()
-    
-    dev = loss_mf_cls.device
-    
-    return loss_mf_cls, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-
-def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8): 
-    # manifold loss among random sampled patches
-    bsz, patch_num, _ = F_s.shape
-    sampler = torch.randperm(bsz * patch_num)[:K]
-
-    f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-    f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-
-    if normalize:
-        f_s = normalize_mean_std(f_s)
-        f_t = normalize_mean_std(f_t)
-
-    M_s = L2_dist(f_s, f_s)
-    M_t = L2_dist(f_t, f_t) 
-
-    if distance == 'MSE':
-        M_diff = M_t - M_s
-        loss_mf_rand = (M_diff * M_diff).mean()
-    elif distance == 'KL':
-        M_s = (M_s + 1) / 2
-        M_t = (M_t + 1) / 2
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
-        loss_mf_rand = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2)) / 2
-    dev = loss_mf_rand.device
-    
-    return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, grad_scale=0.0, world_size=1):
-    bsz, patch_num, _ = F_s.shape
-    sampler = torch.randperm(bsz * patch_num)[:K]
-
-    f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-    f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-    f_s = projectors_net.projs[2](f_s)
-
-    # 1. Extract base prototypes
-    protos = prototypes.protos[2].unsqueeze(0)
-
-    # 2. Normalize EVERYTHING first so normalization doesn't interfere with the scaler
-    if normalize:
-        f_s = normalize_mean_std(f_s)
-        f_t = normalize_mean_std(f_t)
-        protos_norm = normalize_mean_std(protos)
-    else:
-        protos_norm = protos
-
-    # 3. Create the two Prototype Pathways
-    protos_unscaled = protos_norm 
-    protos_scaled = ScaleGradient.apply(protos_norm, grad_scale)
-
-    # ==========================================
-    # Pathway A: For Sinkhorn and Loss 2 (100% Gradient)
-    # ==========================================
-    M_s = L2_dist(f_s, protos_unscaled)
-    # q1 is detached, so it doesn't pass gradients backward anyway
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-
-    M_t = L2_dist(f_t, protos_unscaled)
-    p2 = F.softmax(-M_t / temperature, dim=2)
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-
-    # ==========================================
-    # Pathway B: For Loss 1 and Loss 3 (10% Gradient)
-    # ==========================================
-    M_s_scaled = L2_dist(f_s, protos_scaled)
-    p1_scaled = F.softmax(-M_s_scaled / temperature, dim=2)
-
-    M_t_scaled = L2_dist(f_t, protos_scaled)
-    p2_scaled = F.softmax(-M_t_scaled / temperature, dim=2)
-    
-    # ==========================================
-    # Loss Calculation
-    # ==========================================
-    if distance == 'MSE':
-        # Assuming you want the same logic for MSE
-        diff12 = q1 - p2
-        diff21 = q2 - p1_scaled # Replaced p1 with p1_scaled
-        loss12 = (diff12 * diff12).mean()
-        loss21 = (diff21 * diff21).mean()
-        loss_mf_rand = (loss12 + loss21) / 2 # Adjust based on your MSE needs
-        
-    elif distance == 'KL':
-        # Loss 1 & 3 use p1_scaled (routes through protos_scaled)
-        loss1 = - torch.mean(torch.sum(p2_scaled * torch.log(p1_scaled + 1e-6), dim=2))
-        loss3 = - torch.mean(torch.sum(q1 * torch.log(p1_scaled + 1e-6), dim=2))
-        
-        # Loss 2 uses p2 (routes through protos_unscaled)
-        loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
-
-    loss_mf_rand = (loss1 + loss2 + loss3) / 2
-
-    dev = loss_mf_rand.device
-    return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-
-def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
-    # exclude the cls token if esists
-    dim_size = F_s.shape[1]
-    root = int(dim_size**0.5)
-
-    if root * root == dim_size:
-        f_s = F_s.clone()
-        f_t = F_t.clone()
-    else:
-        f_s = F_s[:, 1:, :].clone()
-        f_t = F_t[:, 1:, :].clone()
-
-    f_s = projectors_net.projs[0](f_s)
-
-    if normalize:
-        f_s = normalize_mean_std(f_s)
-        f_t = normalize_mean_std(f_t)
-        protos_norm = normalize_mean_std(prototypes.protos[0].unsqueeze(0))
-
-    
-    #loss_KoLeo_rand_data = KoLeoData(f_s)
-    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
-    
-    M_s = L2_dist(f_s, protos_norm)
-    #M_s = -cosine_kernel(f_s, protos_norm)
-    q1 = sinkhorn(M_s, nmb_iters=3, epsilon=0.05).detach()
-    M_t = L2_dist(f_t, protos_norm)
-    #M_t = -cosine_kernel(f_t, protos_norm)
-    q2 = sinkhorn(M_t, nmb_iters=3, epsilon=0.05).detach()
-
-    p1 = F.softmax(-M_s / temperature, dim=2)
-    p2 = F.softmax(-M_t / temperature, dim=2)
-    
-    if distance == 'MSE':
-        diff12 = q1 - p2
-        diff21 = q2 - p1
-        loss12 = (diff12 * diff12).mean()
-        loss21 = (diff21 * diff21).mean()
-    elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
-
-    loss_mf_patch = (loss12 + loss21)/2
-    dev = loss_mf_patch.device
-
-    return loss_mf_patch, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-
-def layer_mf_loss_prototypes_cls(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
-    # cls token loss
-    f_s = F_s[:, 0:1, :].permute(1, 0, 2).clone()
-    f_t = F_t[:, 0:1, :].permute(1, 0, 2).clone()
-
-    f_s = projectors_net.projs[0](f_s)
-
-    if normalize:
-        f_s = normalize_mean_std(f_s)
-        f_t = normalize_mean_std(f_t)
-        protos_norm = normalize_mean_std(prototypes.protos[0].unsqueeze(0))
-
-    
-    #loss_KoLeo_rand_data = KoLeoData(f_s)
-    #loss_KoLeo_rand_proto = KoLeoPrototypes( prototypes.protos[2])
-    
-    M_s = L2_dist(f_s, protos_norm)
-    #M_s = -cosine_kernel(f_s, protos_norm)
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    M_t = L2_dist(f_t, protos_norm)
-    #M_t = -cosine_kernel(f_t, protos_norm)
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-
-    p1 = F.softmax(-M_s / temperature, dim=2)
-    p2 = F.softmax(-M_t / temperature, dim=2)
-    
-    if distance == 'MSE':
-        diff12 = q1 - p2
-        diff21 = q2 - p1
-        loss12 = (diff12 * diff12).mean()
-        loss21 = (diff21 * diff21).mean()
-    elif distance == 'KL':
-        loss12 = - torch.mean(torch.sum(q1 * torch.log(p2 + 1e-6), dim=2))
-        loss21 = - torch.mean(torch.sum(q2 * torch.log(p1 + 1e-6), dim=2))
-
-    loss_mf_cls = (loss12 + loss21)/2
-    dev = loss_mf_cls.device
-
-    return loss_mf_cls, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
-
-def merge(x, max_patch_num=196):
-    B, P, C = x.shape
-    if P <= max_patch_num:
-        return x
-    n = int(P ** (1/2))  # original patch num at each dim
-    m = int(max_patch_num ** (1/2))  # target patch num at each dim
-    merge_num = n // m  # merge every (merge_num x merge_num) adjacent patches
-    x = x.view(B, m, merge_num, m, merge_num, C)
-    merged = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, m * m, -1)
-    return merged
-
-
-@torch.no_grad()
-def sinkhorn(out, nmb_iters=3, epsilon=0.05):
+class ContrastMemory(nn.Module):
     """
-    out: tensor of shape [batch_size, n_prototypes]
-    Returns: balanced assignments Q (batch_size x n_prototypes)
+    memory buffer that supplies large amount of negative samples.
     """
-    T, B, K = out.shape
-    exponential = -out / epsilon
-    exponential_max, _ = torch.max(exponential, dim=2, keepdim=True)
-    exponential = exponential - exponential_max
-    Q = torch.exp(exponential).permute(0, 2, 1)  # T x K x B
+    def __init__(self, inputSize, outputSize, K, T=0.07, momentum=0.5):
+        super(ContrastMemory, self).__init__()
+        self.nLem = outputSize
+        self.unigrams = torch.ones(self.nLem)
+        self.multinomial = AliasMethod(self.unigrams)
+        self.multinomial.cuda()
+        self.K = K
 
-    Q /= Q.sum(dim=(1, 2), keepdim=True)    # normalize
+        self.register_buffer('params', torch.tensor([K, T, -1, -1, momentum]))
+        stdv = 1. / math.sqrt(inputSize / 3)
+        self.register_buffer('memory_v1', torch.rand(outputSize, inputSize).mul_(2 * stdv).add_(-stdv))
+        self.register_buffer('memory_v2', torch.rand(outputSize, inputSize).mul_(2 * stdv).add_(-stdv))
 
-    for _ in range(nmb_iters):
-        # normalize rows (prototypes)
-        Q /= Q.sum(dim=2, keepdim=True)
-        Q /= K
+    def forward(self, v1, v2, y, idx=None):
+        K = int(self.params[0].item())
+        T = self.params[1].item()
+        Z_v1 = self.params[2].item()
+        Z_v2 = self.params[3].item()
 
-        # normalize columns (samples)
-        Q /= Q.sum(dim=1, keepdim=True)
-        Q /= B
+        momentum = self.params[4].item()
+        batchSize = v1.size(0)
+        outputSize = self.memory_v1.size(0)
+        inputSize = self.memory_v1.size(1)
 
-    Q *= B  # undo normalization over samples
-    return Q.permute(0, 2, 1).contiguous()  # bach to T x B x K
+        # original score computation
+        if idx is None:
+            idx = self.multinomial.draw(batchSize * (self.K + 1)).view(batchSize, -1)
+            idx.select(1, 0).copy_(y.data)
+        # sample
+        weight_v1 = torch.index_select(self.memory_v1, 0, idx.view(-1)).detach()
+        weight_v1 = weight_v1.view(batchSize, K + 1, inputSize)
+        out_v2 = torch.bmm(weight_v1, v2.view(batchSize, inputSize, 1))
+        out_v2 = torch.exp(torch.div(out_v2, T))
+        # sample
+        weight_v2 = torch.index_select(self.memory_v2, 0, idx.view(-1)).detach()
+        weight_v2 = weight_v2.view(batchSize, K + 1, inputSize)
+        out_v1 = torch.bmm(weight_v2, v1.view(batchSize, inputSize, 1))
+        out_v1 = torch.exp(torch.div(out_v1, T))
 
-@torch.no_grad()
-def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
-    exponential = -out / epsilon
-    exponential_max, _ = torch.max(exponential, dim=2, keepdim=True)
-    exponential = exponential - exponential_max
-    
-    Q = torch.exp(exponential).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
-    B = Q.shape[2] * world_size # number of samples to assign
-    K = Q.shape[1] # how many prototypes
+        # set Z if haven't been set yet
+        if Z_v1 < 0:
+            self.params[2] = out_v1.mean() * outputSize
+            Z_v1 = self.params[2].clone().detach().item()
+            print("normalization constant Z_v1 is set to {:.1f}".format(Z_v1))
+        if Z_v2 < 0:
+            self.params[3] = out_v2.mean() * outputSize
+            Z_v2 = self.params[3].clone().detach().item()
+            print("normalization constant Z_v2 is set to {:.1f}".format(Z_v2))
 
-    # make the matrix sums to 1
-    sum_Q = Q.sum(dim=(1, 2), keepdim=True)
-    dist.all_reduce(sum_Q)
-    Q /= sum_Q
+        # compute out_v1, out_v2
+        out_v1 = torch.div(out_v1, Z_v1).contiguous()
+        out_v2 = torch.div(out_v2, Z_v2).contiguous()
 
-    for it in range(nmb_iters):
-        # normalize each row: total weight per prototype must be 1/K
-        sum_of_rows = torch.sum(Q, dim=2, keepdim=True)
-        dist.all_reduce(sum_of_rows)
-        Q /= sum_of_rows
-        Q /= K
+        # update memory
+        with torch.no_grad():
+            l_pos = torch.index_select(self.memory_v1, 0, y.view(-1))
+            l_pos.mul_(momentum)
+            l_pos.add_(torch.mul(v1, 1 - momentum))
+            l_norm = l_pos.pow(2).sum(1, keepdim=True).pow(0.5)
+            updated_v1 = l_pos.div(l_norm)
+            self.memory_v1.index_copy_(0, y, updated_v1)
 
-        # normalize each column: total weight per sample must be 1/B
-        Q /= torch.sum(Q, dim=1, keepdim=True)
-        Q /= B
+            ab_pos = torch.index_select(self.memory_v2, 0, y.view(-1))
+            ab_pos.mul_(momentum)
+            ab_pos.add_(torch.mul(v2, 1 - momentum))
+            ab_norm = ab_pos.pow(2).sum(1, keepdim=True).pow(0.5)
+            updated_v2 = ab_pos.div(ab_norm)
+            self.memory_v2.index_copy_(0, y, updated_v2)
 
-    Q *= B # the colomns must sum to 1 so that Q is an assignment
-    return Q.permute(0, 2, 1)
-
-def cosine_kernel(x, p):
-    # In 3D (B, F, S), the 'S' dimension is now dim=2
-    x = F.normalize(x, p=2, dim=2)  
-    p = F.normalize(p, p=2, dim=2)  
-    
-    # torch.bmm: (B, F, S) @ (B, S, F) -> (B, F, F)
-    cosine_similarity = torch.bmm(x, p.transpose(1, 2))
-    return cosine_similarity
-
-def L2_dist(x, p):
-    # cdist on (B, F, S) natively computes distance between F points -> (B, F, F)
-    dist = torch.cdist(x, p, p=2)  
-    
-    # Divide by S, which is now x.shape[2] in the 3D tensor
-    dist_sq = dist.pow(2) / x.shape[2]  
-    return dist_sq
-
-
-def normalize_mean_std(x, eps=1e-6):
-    x_norm = (x - x.mean(dim=1, keepdim=True)) /  (x.std(dim=1, keepdim=True) + eps)
-    return x_norm
-
-class KoLeoLossData(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.pdist = nn.PairwiseDistance(2, eps=1e-8)
-
-    def pairwise_NNs_inner(self, x):
-        """
-        Pairwise nearest neighbors using L2 distance for (B, T, D) tensors.
-        """
-        dists = torch.cdist(x, x, p=2)
-
-        dists.diagonal(dim1=-2, dim2=-1).fill_(float('inf'))
-        _, I = torch.min(dists, dim=2)
-
-        return I
-
-    def forward(self, student_output, eps=1e-6):
-        # Fix 1: Updated autocast syntax to remove warning
-        with torch.amp.autocast('cuda', enabled=False):
-            
-            # 2. Find nearest neighbors
-            I = self.pairwise_NNs_inner(student_output)
-
-            # 3. Gather neighbors
-            # Fix 2: Changed variable name 'F' to 'feat_dim' to avoid collision with functional F
-            B, T, feat_dim = student_output.shape
-            
-            batch_indices = torch.arange(B, device=student_output.device).view(-1, 1).expand(-1, T)
-            neighbors = student_output[batch_indices, I]
+        return out_v1, out_v2
 
 
-            # 4. Flatten and calculate distance
-            flat_student = student_output.view(-1, feat_dim)
-            flat_neighbors = neighbors.view(-1, feat_dim)
-            
-            distances = self.pdist(flat_student, flat_neighbors)
+class AliasMethod(object):
+    """
+    From: https://hips.seas.harvard.edu/blog/2013/03/03/the-alias-method-efficient-sampling-with-many-discrete-outcomes/
+    """
+    def __init__(self, probs):
 
-            loss = -torch.log(distances + eps).mean()
-        
-        return loss
+        if probs.sum() > 1:
+            probs.div_(probs.sum())
+        K = len(probs)
+        self.prob = torch.zeros(K)
+        self.alias = torch.LongTensor([0]*K)
 
-class KoLeoLossPrototypes(nn.Module):
-    """Kozachenko-Leonenko entropic loss regularizer from Sablayrolles et al. - 2018 - Spreading vectors for similarity search"""
+        # Sort the data into the outcomes with probabilities
+        # that are larger and smaller than 1/K.
+        smaller = []
+        larger = []
+        for kk, prob in enumerate(probs):
+            self.prob[kk] = K*prob
+            if self.prob[kk] < 1.0:
+                smaller.append(kk)
+            else:
+                larger.append(kk)
 
-    def __init__(self):
-        super().__init__()
-        self.pdist = nn.PairwiseDistance(2, eps=1e-8)
+        # Loop though and create little binary mixtures that
+        # appropriately allocate the larger outcomes over the
+        # overall uniform mixture.
+        while len(smaller) > 0 and len(larger) > 0:
+            small = smaller.pop()
+            large = larger.pop()
 
-    def pairwise_NNs_inner(self, x):
-        """
-        Pairwise nearest neighbors for L2-normalized vectors.
-        Uses Torch rather than Faiss to remain on GPU.
-        """
+            self.alias[small] = large
+            self.prob[large] = (self.prob[large] - 1.0) + self.prob[small]
 
-        dists = torch.cdist(x, x, p=2) 
+            if self.prob[large] < 1.0:
+                smaller.append(large)
+            else:
+                larger.append(large)
 
-        n = x.shape[0]
-        dists.view(-1)[:: (n + 1)].fill_(float('inf'))
+        for last_one in smaller+larger:
+            self.prob[last_one] = 1
 
-        _, I = torch.min(dists, dim=1)
-        return I
+    def cuda(self):
+        self.prob = self.prob.cuda()
+        self.alias = self.alias.cuda()
 
-    def forward(self, student_output, eps=1e-6):
-        """
-        Args:
-            student_output (BxD): backbone output of student
-        """
-        with torch.cuda.amp.autocast(enabled=False):
-            I = self.pairwise_NNs_inner(student_output)  # noqa: E741
-            distances = self.pdist(student_output, student_output[I])  # BxD, BxD -> B
-            loss = -torch.log(distances + eps).mean()
-        return loss
+    def draw(self, N):
+        """ Draw N samples from multinomial """
+        K = self.alias.size(0)
 
-def DKD_loss(logit_s, logit_t, gt_label, temp=1, gamma=1):
-    
-    if len(gt_label.size()) > 1:
-        label = torch.max(gt_label, dim=1, keepdim=True)[1]
-    else:
-        label = gt_label.view(len(gt_label), 1)
+        kk = torch.zeros(N, dtype=torch.long, device=self.prob.device).random_(0, K)
+        prob = self.prob.index_select(0, kk)
+        alias = self.alias.index_select(0, kk)
+        # b is whether a random number is greater than q
+        b = torch.bernoulli(prob)
+        oq = kk.mul(b.long())
+        oj = alias.mul((1-b).long())
 
-    # N*class
-    N, c = logit_s.shape
-    s_i = F.log_softmax(logit_s, dim=1)
-    t_i = F.softmax(logit_t, dim=1)
-    # N*1
-    s_t = torch.gather(s_i, 1, label)
-    t_t = torch.gather(t_i, 1, label).detach()
-
-    loss_t = - (t_t * s_t).mean()
-
-    mask = torch.ones_like(logit_s).scatter_(1, label, 0).bool()
-    logit_s = logit_s[mask].reshape(N, -1)
-    logit_t = logit_t[mask].reshape(N, -1)
-    
-    # N*class
-    S_i = F.log_softmax(logit_s/temp, dim=1)
-    T_i = F.softmax(logit_t/temp, dim=1)     
-
-    loss_non =  (T_i * S_i).sum(dim=1).mean()
-    loss_non = - gamma * (temp**2) * loss_non
-
-    return loss_t + loss_non
+        return oq + oj
