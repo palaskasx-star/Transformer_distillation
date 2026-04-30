@@ -15,6 +15,21 @@ from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.data import create_transform
 
 
+class IndexedDataset(torch.utils.data.Dataset):
+    """
+    Wraps a standard PyTorch dataset to return (image, target, index) 
+    instead of just (image, target). Required for CRD memory bank.
+    """
+    def __init__(self, base_dataset):
+        self.base_dataset = base_dataset
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, index):
+        img, target = self.base_dataset[index]
+        return img, target, index
+
 class INatDataset(ImageFolder):
     def __init__(self, root, train=True, year=2018, transform=None, target_transform=None,
                  category='name', loader=default_loader):
@@ -78,7 +93,9 @@ def build_dataset(is_train, args):
         dataset = INatDataset(args.data_path, train=is_train, year=2019,
                               category=args.inat_category, transform=transform)
         nb_classes = dataset.nb_classes
-
+        
+    dataset = IndexedDataset(dataset)
+    
     return dataset, nb_classes
 
 
