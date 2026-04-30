@@ -293,10 +293,8 @@ def main(args):
     output_dir = Path(args.output_dir)
     if args.distillation_type != 'none':
         extra_info = f"s_{args.model}_t_{args.teacher_model}"
-        if args.use_prototypes:
-            extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
     else:
-        extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_cj_{args.color_jitter}"
+        extra_info = f"model_{args.model}"
 
     output_dir = output_dir / extra_info
     output_dir.mkdir(parents=True, exist_ok=True)
