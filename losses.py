@@ -192,9 +192,14 @@ class ContrastMemory(nn.Module):
         outputSize = self.memory_v1.size(0)
         inputSize = self.memory_v1.size(1)
 
+        # GET THE CURRENT DEVICE from the input batch
+        current_device = v1.device
+
         # original score computation
         if idx is None:
-            idx = self.multinomial.draw(batchSize * (self.K + 1)).view(batchSize, -1)
+            # Pass the current device to the draw method to ensure the random indices 
+            # are generated directly on the correct GPU
+            idx = self.multinomial.draw(batchSize * (self.K + 1), current_device).view(batchSize, -1)
             idx.select(1, 0).copy_(y.data)
         # sample
         weight_v1 = torch.index_select(self.memory_v1, 0, idx.view(-1)).detach()
@@ -245,15 +250,12 @@ class AliasMethod(object):
     From: https://hips.seas.harvard.edu/blog/2013/03/03/the-alias-method-efficient-sampling-with-many-discrete-outcomes/
     """
     def __init__(self, probs):
-
         if probs.sum() > 1:
             probs.div_(probs.sum())
         K = len(probs)
         self.prob = torch.zeros(K)
         self.alias = torch.LongTensor([0]*K)
 
-        # Sort the data into the outcomes with probabilities
-        # that are larger and smaller than 1/K.
         smaller = []
         larger = []
         for kk, prob in enumerate(probs):
@@ -263,9 +265,6 @@ class AliasMethod(object):
             else:
                 larger.append(kk)
 
-        # Loop though and create little binary mixtures that
-        # appropriately allocate the larger outcomes over the
-        # overall uniform mixture.
         while len(smaller) > 0 and len(larger) > 0:
             small = smaller.pop()
             large = larger.pop()
@@ -281,18 +280,21 @@ class AliasMethod(object):
         for last_one in smaller+larger:
             self.prob[last_one] = 1
 
-    def cuda(self):
-        self.prob = self.prob.cuda()
-        self.alias = self.alias.cuda()
+    # DELETE the def cuda(self): method entirely.
 
-    def draw(self, N):
-        """ Draw N samples from multinomial """
+    def draw(self, N, device):
+        """ Draw N samples from multinomial, ensuring they are on the correct device """
         K = self.alias.size(0)
+        
+        # Ensure prob and alias are on the right device before using them
+        self.prob = self.prob.to(device)
+        self.alias = self.alias.to(device)
 
-        kk = torch.zeros(N, dtype=torch.long, device=self.prob.device).random_(0, K)
+        # Create random indices directly on the required device
+        kk = torch.zeros(N, dtype=torch.long, device=device).random_(0, K)
         prob = self.prob.index_select(0, kk)
         alias = self.alias.index_select(0, kk)
-        # b is whether a random number is greater than q
+        
         b = torch.bernoulli(prob)
         oq = kk.mul(b.long())
         oj = alias.mul((1-b).long())
