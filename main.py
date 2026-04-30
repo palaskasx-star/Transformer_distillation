@@ -440,8 +440,7 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, model_without_ddp.proto_proj_module.prototypes, model_without_ddp.proto_proj_module.projectors, args)
-
+    criterion = DistillationLoss(criterion, teacher_model, args)
 
     #output_dir = Path(args.output_dir)
     if args.resume:
