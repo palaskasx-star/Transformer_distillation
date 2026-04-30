@@ -405,6 +405,10 @@ def main(args):
     args.s_dim = model.embed_dim 
     args.t_dim = teacher_model.embed_dim
 
+    from losses import CRDProjectorWrapper
+    crd_proj_module = CRDProjectorWrapper(args.s_dim, args.t_dim, args.feat_dim).to(device)
+    model.add_module("crd_proj_module", crd_proj_module)
+    
     model_ema = None
     if args.model_ema:
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
@@ -438,7 +442,7 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    criterion = DistillationLoss(criterion, teacher_model, args)
+    criterion = DistillationLoss(criterion, teacher_model, model_without_ddp.crd_proj_module, args)
 
     #output_dir = Path(args.output_dir)
     if args.resume:
