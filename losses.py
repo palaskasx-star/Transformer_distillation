@@ -107,7 +107,10 @@ class DistillationLoss(nn.Module):
         proj_t = self.crd_projectors.embed_t(f_t)
 
         # Pass the already projected features to CRDLoss
-        crd_loss = self.crd_loss(proj_s, proj_t, batch_idx)
+        if self.training:
+            crd_loss = self.crd_loss(proj_s, proj_t, batch_idx)
+        else:
+            crd_loss = torch.tensor(0.0, device=outputs.device)
 
         total_loss = base_loss + distillation_loss + (self.crd_weight * crd_loss)
 
