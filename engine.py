@@ -87,6 +87,7 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
     header = 'Test:'
 
     model.eval()
+    criterion_dist.eval() 
 
     # NEW: Unpack indices here as well to match the dataset output, even if not explicitly used
     for images, target, indices in metric_logger.log_every(data_loader, 10, header):
