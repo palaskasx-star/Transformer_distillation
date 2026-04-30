@@ -210,33 +210,12 @@ def get_args_parser():
     parser.add_argument('--distance', default='MSE', choices=['MSE', 'KL'], type=str, help="")
 
 
-    parser.add_argument('--use-prototypes', action='store_true')
-    parser.add_argument(
-        '--prototypes-number', 
-        default=[256, 512, 1024],  # Provide a list as the default
-        type=int,                  # Each element in the list will be converted to an int
-        nargs=3,                   # Specifically requires 3 arguments
-        help="[Cls, Patch, Rand] number of prototypes"
-    )
-
-    parser.add_argument('--KoLeoData', default=0.1, type=float)
-    parser.add_argument('--KoLeoPrototypes', default=0.1, type=float)
-
-    parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
-                help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
-    
-    parser.add_argument('--orthogonal-projector', action='store_true',
-                help='Apply orthogonal parametrization to the linear projector.')
-
-    parser.add_argument('--centroids-path', default='', type=str, 
-                help='Path to the saved centroids .pth file to use as frozen prototypes')
-
-    parser.add_argument('--freeze-prototypes', action='store_true',
-                help='Freeze prototypes so they are not updated during training.')
-
-    parser.add_argument('--temperature', default=0.1, type=float)
-
-    parser.add_argument('--grad-scale', default=0.0, type=float)
+    # CRD parameters
+    parser.add_argument('--feat-dim', default=128, type=int, help='Feature projection dimension')
+    parser.add_argument('--nce-k', default=16384, type=int, help='Number of negative samples for NCE')
+    parser.add_argument('--nce-t', default=0.07, type=float, help='Temperature for InfoNCE')
+    parser.add_argument('--nce-m', default=0.5, type=float, help='Momentum for memory bank update')
+    parser.add_argument('--crd-weight', default=0.8, type=float, help='Weight multiplier for the CRD loss')
     return parser
 
 
@@ -256,6 +235,8 @@ def main(args):
 
     dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
     dataset_val, _ = build_dataset(is_train=False, args=args)
+
+    args.n_data = len(dataset_train)
 
     if args.distributed:
         num_tasks = utils.get_world_size()
@@ -423,164 +404,8 @@ def main(args):
             teacher_model.to(device)
             teacher_model.eval()
 
-    class ProtoProjectorWrapper(torch.nn.Module):
-        def __init__(self, prototypes, projectors):
-            super().__init__()
-            # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
-            self.prototypes = torch.nn.ModuleList()
-            self.projectors = torch.nn.ModuleList()
-
-            for proto_list, proj_list in zip(prototypes, projectors):
-                # Wrap each group of 3 prototypes in a submodule with ParameterList
-                proto_module = torch.nn.Module()
-                proto_module.protos = torch.nn.ParameterList(proto_list)
-                self.prototypes.append(proto_module)
-
-                # Wrap each group of 3 projectors in a submodule with ModuleList
-                proj_module = torch.nn.Module()
-                proj_module.projs = torch.nn.ModuleList(proj_list)
-                self.projectors.append(proj_module)
-
-    custom_centroids = None
-    if args.centroids_path:
-        print(f"Loading frozen centroids from '{args.centroids_path}'...")
-        centroid_dict = torch.load(args.centroids_path, map_location='cpu', weights_only=False)
-        
-        # Convert your saved numpy arrays into PyTorch tensors and move to device
-        # We store them in a list corresponding to the order of args.s_id 
-        custom_centroids = [
-            centroid_dict['first'].clone().detach().to(dtype=torch.float32, device=device),
-            centroid_dict['middle'].clone().detach().to(dtype=torch.float32, device=device),
-            centroid_dict['last'].clone().detach().to(dtype=torch.float32, device=device)
-        ]
-
-    if args.use_prototypes:
-        images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
-
-        with torch.no_grad():
-            # Teacher
-            _, features_teacher = teacher_model(images)
-            # Student
-            _, features_student = model(images)
-
-        prototypes = []
-        projectors_nets = []
-        for i, feat in enumerate(args.s_id):
-            feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
-            feature_dim_student = features_student[args.s_id[i]].shape[2]
-
-            # Create 3 prototype matrices and 3 projectors for each i
-            proto_list = []
-            projector_list = []
-
-            if args.distillation_beta == 0.0 or feat != 11 :
-                proto_list.append(None)
-                projector_list.append(None)
-            else:
-                if custom_centroids is not None and i < len(custom_centroids):
-                    # Slice the loaded centroids to match requested number (e.g., 256) and FREEZE
-                    proto = custom_centroids[i][:args.prototypes_number[0], :].clone()
-                    proto = torch.nn.Parameter(proto, requires_grad=False)
-                else:
-                    # Fallback to original random trainable initialization
-                    proto = torch.empty(args.prototypes_number[0], feature_dim_teacher, device=device)
-                    _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                    torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                    proto = torch.nn.Parameter(proto, requires_grad=not args.freeze_prototypes)
-                proto_list.append(proto)
-
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
-                projector_list.append(projector)
-
-
-            if args.gamma == 0.0:
-                proto_list.append(None)
-                projector_list.append(None)
-            else:
-                if custom_centroids is not None and i < len(custom_centroids):
-                    proto = custom_centroids[i][:args.prototypes_number[1], :].clone()
-                    proto = torch.nn.Parameter(proto, requires_grad=False)
-                else:
-                    proto = torch.empty(args.prototypes_number[1], feature_dim_teacher, device=device)
-                    _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                    torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                    proto = torch.nn.Parameter(proto, requires_grad=not args.freeze_prototypes)
-                proto_list.append(proto)
-
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
-                projector_list.append(projector)
-                
-            if args.delta == 0.0:
-                proto_list.append(None)
-                projector_list.append(None)
-            else:
-                if custom_centroids is not None and i < len(custom_centroids):
-                    proto = custom_centroids[i][:args.prototypes_number[2], :].clone()
-                    proto = torch.nn.Parameter(proto, requires_grad=False)
-                else:
-                    proto = torch.empty(args.prototypes_number[2], feature_dim_teacher, device=device)
-                    _sqrt_k = (1. / feature_dim_teacher) ** 0.5
-                    torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
-                    proto = torch.nn.Parameter(proto, requires_grad=not args.freeze_prototypes)
-                proto_list.append(proto)
-
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
-                projector_list.append(projector)
-
-            prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
-
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
-        model.add_module("proto_proj_module", proto_proj_module)
-    else:
-        prototypes = []
-        projectors_nets = []
-        for i, feat in enumerate(args.s_id):
-            proto_list = []
-            projector_list = []
-            for j in range(3):
-                proto_list.append(None)
-                projector_list.append(None)
-            prototypes.append(proto_list)
-            projectors_nets.append(projector_list)
-
-        proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
-        model.add_module("proto_proj_module", proto_proj_module)
-
-
+    args.s_dim = model.embed_dim 
+    args.t_dim = teacher_model.embed_dim
 
     model_ema = None
     if args.model_ema:
