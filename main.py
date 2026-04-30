@@ -443,6 +443,7 @@ def main(args):
         criterion = torch.nn.CrossEntropyLoss()
 
     criterion = DistillationLoss(criterion, teacher_model, model_without_ddp.crd_proj_module, args)
+    criterion.to(device)
 
     #output_dir = Path(args.output_dir)
     if args.resume:
