@@ -192,8 +192,6 @@ class ContrastMemory(nn.Module):
         batchSize = v1.size(0)
         outputSize = self.memory_v1.size(0)
         inputSize = self.memory_v1.size(1)
-        print(self.memory_v1.size(0))
-        print(self.memory_v1.size(1))
 
         # GET THE CURRENT DEVICE from the input batch
         current_device = v1.device
