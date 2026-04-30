@@ -16,33 +16,58 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 
-
 eps = 1e-7
 
+# --------------------------------------------------------
+# NEW: Wrapper for the projectors so they live on the model
+# --------------------------------------------------------
+class CRDProjectorWrapper(nn.Module):
+    def __init__(self, s_dim, t_dim, feat_dim):
+        super().__init__()
+        self.embed_s = Embed(s_dim, feat_dim)
+        self.embed_t = Embed(t_dim, feat_dim)
+
+class Embed(nn.Module):
+    def __init__(self, dim_in=1024, dim_out=128):
+        super(Embed, self).__init__()
+        self.linear = nn.Linear(dim_in, dim_out)
+        self.l2norm = Normalize(2)
+
+    def forward(self, x):
+        x = x.view(x.shape[0], -1)
+        x = self.linear(x)
+        return self.l2norm(x)
+
+class Normalize(nn.Module):
+    def __init__(self, power=2):
+        super(Normalize, self).__init__()
+        self.power = power
+
+    def forward(self, x):
+        norm = x.pow(self.power).sum(1, keepdim=True).pow(1. / self.power)
+        return x.div(norm)
+
+# --------------------------------------------------------
+# Updated Loss Functions
+# --------------------------------------------------------
 class DistillationLoss(nn.Module):
-    """
-    Wraps standard criterion and adds CRD knowledge distillation.
-    """
-    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, args):
+    def __init__(self, base_criterion: torch.nn.Module, teacher_model: torch.nn.Module, crd_projectors: nn.Module, args):
         super().__init__()
         self.base_criterion = base_criterion
         self.teacher_model = teacher_model
+        
+        # NEW: Store the reference to the model's projectors
+        self.crd_projectors = crd_projectors 
         
         self.distillation_type = args.distillation_type
         self.tau = args.distillation_tau
         self.layer_ids_s = args.s_id
         self.layer_ids_t = args.t_id
 
-        # Initialize CRD Loss
-        # Assuming args contains n_data, s_dim, t_dim, feat_dim, nce_k, nce_t, nce_m
         self.crd_loss = CRDLoss(args)
-        
-        self.crd_weight = args.crd_weight # e.g., 0.8
+        self.crd_weight = args.crd_weight 
 
     def forward(self, inputs, outputs, labels, batch_idx):
-        """
-        Note: batch_idx is REQUIRED for CRD to update the memory bank.
-        """
         block_outs_s = outputs[1]
         if isinstance(outputs[0], torch.Tensor):
             outputs_kd = outputs[0]
@@ -53,12 +78,12 @@ class DistillationLoss(nn.Module):
         base_loss = self.base_criterion(outputs, labels)
 
         if self.distillation_type == 'none':
-            return base_loss, torch.tensor(0.), torch.tensor(0.)
+            return base_loss, torch.tensor(0.), torch.tensor(0.), torch.tensor(0.)
 
         with torch.no_grad():
             teacher_outputs, block_outs_t = self.teacher_model(inputs)
 
-        # Standard KD (Logit matching)
+        # Standard KD
         if self.distillation_type == 'soft':
             T = self.tau
             distillation_loss = F.kl_div(
@@ -73,37 +98,35 @@ class DistillationLoss(nn.Module):
             distillation_loss = torch.tensor(0., device=outputs.device)
 
         # CRD Feature Distillation
-        # Extract the [CLS] token (or global pooled feature) from the chosen layer
-        f_s = block_outs_s[self.layer_ids_s[0]][:, 0, :] # Shape: [B, C_s]
-        f_t = block_outs_t[self.layer_ids_t[0]][:, 0, :] # Shape: [B, C_t]
+        f_s = block_outs_s[self.layer_ids_s[0]][:, 0, :] 
+        f_t = block_outs_t[self.layer_ids_t[0]][:, 0, :] 
 
-        crd_loss = self.crd_loss(f_s, f_t, batch_idx)
+        # NEW: Project features using the model's parallel projectors
+        proj_s = self.crd_projectors.embed_s(f_s)
+        proj_t = self.crd_projectors.embed_t(f_t)
+
+        # Pass the already projected features to CRDLoss
+        crd_loss = self.crd_loss(proj_s, proj_t, batch_idx)
 
         total_loss = base_loss + distillation_loss + (self.crd_weight * crd_loss)
 
         return total_loss, base_loss, distillation_loss, crd_loss
 
-# --------------------------------------------------------
-# CRD Core Components (from previous implementation)
-# --------------------------------------------------------
-
 class CRDLoss(nn.Module):
     def __init__(self, opt):
         super(CRDLoss, self).__init__()
-        self.embed_s = Embed(opt.s_dim, opt.feat_dim)
-        self.embed_t = Embed(opt.t_dim, opt.feat_dim)
+        # Removed embed_s and embed_t from here; they now live on the model
         self.contrast = ContrastMemory(opt.feat_dim, opt.n_data, opt.nce_k, opt.nce_t, opt.nce_m)
         self.criterion_t = ContrastLoss(opt.n_data)
         self.criterion_s = ContrastLoss(opt.n_data)
 
     def forward(self, f_s, f_t, idx, contrast_idx=None):
-        f_s = self.embed_s(f_s)
-        f_t = self.embed_t(f_t)
+        # f_s and f_t arrive here ALREADY projected
         out_s, out_t = self.contrast(f_s, f_t, idx, contrast_idx)
         s_loss = self.criterion_s(out_s)
         t_loss = self.criterion_t(out_t)
         return s_loss + t_loss
-
+        
 class ContrastLoss(nn.Module):
     def __init__(self, n_data):
         super(ContrastLoss, self).__init__()
