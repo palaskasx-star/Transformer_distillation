@@ -292,7 +292,7 @@ def main(args):
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
     if args.distillation_type != 'none':
-        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_d_{args.distance}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_b_{args.distillation_beta}_g_{args.gamma}_d_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
+        extra_info = f"s_{args.model}_t_{args.teacher_model}"
         if args.use_prototypes:
             extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
     else:
