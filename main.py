@@ -496,6 +496,7 @@ def main(args):
 
             return y, x
     """
+    """
     class TransformerABF(torch.nn.Module):
         def __init__(self, in_channel, out_channel, mid_channel, is_fuse=True):
             super(TransformerABF, self).__init__()
@@ -532,6 +533,73 @@ def main(args):
                 
             y_out = self.proj_last(x)
             return y_out, x
+        """
+        class TransformerABF(torch.nn.Module):
+            def __init__(self, in_channel, mid_channel, out_channel, is_fuse=True):
+                super(TransformerABF, self).__init__()
+                self.is_fuse = is_fuse
+        
+                # Exactly matching original ABF's conv1
+                self.conv1 = torch.nn.Sequential(
+                    torch.nn.Conv2d(in_channel, mid_channel, kernel_size=1, bias=False),
+                    torch.nn.BatchNorm2d(mid_channel),
+                )
+                
+                # Exactly matching original ABF's conv2 (Spatial 3x3 mixing)
+                self.conv2 = torch.nn.Sequential(
+                    torch.nn.Conv2d(mid_channel, out_channel, kernel_size=3, stride=1, padding=1, bias=False),
+                    torch.nn.BatchNorm2d(out_channel),
+                )
+                
+                # Exactly matching original ABF's attention mechanism
+                if is_fuse:
+                    self.att_conv = torch.nn.Sequential(
+                        torch.nn.Conv2d(mid_channel * 2, 2, kernel_size=1),
+                        torch.nn.Sigmoid(),
+                    )
+                else:
+                    self.att_conv = None
+                    
+                self.__init_weights()
+        
+            def __init_weights(self):
+                torch.nn.init.kaiming_uniform_(self.conv1[0].weight, a=1)
+                torch.nn.init.kaiming_uniform_(self.conv2[0].weight, a=1)
+        
+            def forward(self, x, y=None):
+                # Input x is [N, L, C] (Sequence). Convert to [N, C, H, W] (Grid)
+                N, L, C = x.shape
+                H = int(L ** 0.5)
+                W = H
+                
+                x_2d = x.transpose(1, 2).reshape(N, C, H, W)
+        
+                # 1. Transform student features
+                x_2d = self.conv1(x_2d)
+        
+                # 2. Fusion Mechanism
+                if self.att_conv is not None and y is not None:
+                    # Convert deeper residual features y [N, L_y, C_y] to 2D
+                    y_H = int(y.shape[1] ** 0.5)
+                    y_2d = y.transpose(1, 2).reshape(N, y.shape[-1], y_H, y_H)
+                    
+                    # Upsample residual features (handles Swin/hierarchical ViTs)
+                    if y_H != H:
+                        y_2d = F.interpolate(y_2d, size=(H, W), mode="nearest")
+                    
+                    # Fuse
+                    z = torch.cat([x_2d, y_2d], dim=1)
+                    z = self.att_conv(z)
+                    x_2d = (x_2d * z[:, 0:1, :, :] + y_2d * z[:, 1:2, :, :])
+        
+                # 3. Output features (applies the 3x3 convolution)
+                y_out_2d = self.conv2(x_2d)
+        
+                # Convert back to [N, L, C] so the rest of the Transformer pipeline doesn't break
+                y_out = y_out_2d.flatten(2).transpose(1, 2)
+                x_out = x_2d.flatten(2).transpose(1, 2)
+        
+                return y_out, x_out
                 
         class ProtoProjectorWrapper(torch.nn.Module):
             def __init__(self, prototypes, abfs):
@@ -570,8 +638,8 @@ def main(args):
             
             abf = TransformerABF(
                 in_channel=feature_dim_student, 
-                out_channel=feature_dim_teacher, 
-                mid_channel=args.mid_channel, 
+                mid_channel=args.mid_channel,      # Passed as mid_channel
+                out_channel=feature_dim_teacher,   # Passed as out_channel
                 is_fuse=is_fuse
             )
             abfs.append(abf)
