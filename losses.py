@@ -172,8 +172,9 @@ class ContrastMemory(nn.Module):
         super(ContrastMemory, self).__init__()
         self.nLem = outputSize
         self.unigrams = torch.ones(self.nLem)
+        
+        # We just initialize it. The device is handled dynamically in the draw() method now.
         self.multinomial = AliasMethod(self.unigrams)
-        self.multinomial.cuda()
         self.K = K
 
         self.register_buffer('params', torch.tensor([K, T, -1, -1, momentum]))
