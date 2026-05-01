@@ -42,7 +42,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             # NEW: Simplified loss unpacking based on the updated DistillationLoss
-            loss, loss_base, loss_dist, loss_crd = criterion(samples, outputs, targets, indices)
+            loss_base, loss_dist, loss_crd = criterion(samples, outputs, targets, indices)
+            loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + args.distillation_beta *loss_crd
 
         loss_value = loss.item()
 
