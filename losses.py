@@ -112,9 +112,7 @@ class DistillationLoss(nn.Module):
         else:
             crd_loss = torch.tensor(0.0, device=outputs.device)
 
-        total_loss = base_loss + distillation_loss + (self.crd_weight * crd_loss)
-
-        return total_loss, base_loss, distillation_loss, crd_loss
+        return  base_loss, distillation_loss, crd_loss
 
 class CRDLoss(nn.Module):
     def __init__(self, opt):
