@@ -25,6 +25,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
                     writer=None, args=None, set_training_mode=True):
     model.train(set_training_mode)
+    criterion.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
