@@ -102,7 +102,7 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
             
             # Use the evaluation pass. Note: CRD usually updates memory only in train mode, 
             # so inside your criterion_dist you should ensure CRD memory isn't updated during eval
-            _, loss_base, loss_dist, loss_crd = criterion_dist(images, output, target_onehot, indices)
+            loss_base, loss_dist, loss_crd = criterion_dist(images, output, target_onehot, indices)
 
         acc1, acc5 = accuracy(output[0], target, topk=(1, 5))
 
