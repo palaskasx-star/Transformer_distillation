@@ -88,10 +88,12 @@ def review_feature_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, ab
 
     # Compute standard MSE loss between fused student features and teacher features
     loss_review = 0.0
+    counter = 0
     for f_s, f_t in zip(feats_s, feats_t):
         # L2 normalize features before MSE (optional but recommended for Transformers)
         loss_review += hcl_transformer(f_t, f_s)
-
+        counter = counter + 1
+    loss_review = loss_review/counter
     return loss_review
 
 def hcl_transformer(t_feat, s_feat):
