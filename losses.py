@@ -113,8 +113,8 @@ def hcl_transformer(t_feat, s_feat):
     if H * W != L:
         raise ValueError(f"Sequence length {L} is not a perfect square. Did you forget to remove the [CLS] token?")
         
-    t_grid = t_feat.transpose(1, 2).reshape(N, C, H, W).contiguous()
-    s_grid = s_feat.transpose(1, 2).reshape(N, C, H, W).contiguous()
+    t_grid = t_feat.transpose(1, 2).reshape(N, C, H, W)
+    s_grid = s_feat.transpose(1, 2).reshape(N, C, H, W)
     
     # 3. Multi-scale hierarchical pooling (4x4, 2x2, 1x1)
     cnt = 1.0
