@@ -596,8 +596,8 @@ def main(args):
             y_out_2d = self.conv2(x_2d)
     
             # Convert back to [N, L, C] so the rest of the Transformer pipeline doesn't break
-            y_out = y_out_2d.flatten(2).transpose(1, 2)
-            x_out = x_2d.flatten(2).transpose(1, 2)
+            y_out = y_out_2d.flatten(2).transpose(1, 2).contiguous()
+            x_out = x_2d.flatten(2).transpose(1, 2).contiguous()
     
             return y_out, x_out
             
