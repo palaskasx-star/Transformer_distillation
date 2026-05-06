@@ -194,10 +194,6 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_rand(
                     F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
                 
-        # Reset meters for the next 100 iterations
-        loss_mf_rand_meter.reset()
-        loss_koleo_rand_meter.reset()
-        total_loss_meter.reset()
         losses[0].append(loss_mf_cls)
         losses[1].append(loss_mf_patch)
         losses[2].append(loss_mf_rand)
