@@ -288,9 +288,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
                                   prototypes=None, projectors_net=None, KoLeoData=None, 
                                   KoLeoPrototypes=None, temperature=0.1, grad_scale=0.0, world_size=1):
     
-    # ---------------------------------------------------------
     # Setup CUDA timers
-    # ---------------------------------------------------------
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
 
@@ -298,28 +296,22 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     # Block 1: Setup, Sampling, and Projection
     # ==========================================
     start.record()
-    
     bsz, patch_num, _ = F_s.shape
-    # FIX APPLIED: Added device=F_s.device to prevent CPU/GPU sync bottleneck here
     sampler = torch.randperm(bsz * patch_num, device=F_s.device)[:K]
 
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_s = projectors_net.projs[2](f_s)
 
-    # 1. Extract base prototypes
     protos = prototypes.protos[2].unsqueeze(0)
-
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 1] Sampling & Projection: {start.elapsed_time(end):.3f} ms")
+    print(f"[Block 1] Sampling & Proj:       {start.elapsed_time(end):.3f} ms")
 
     # ==========================================
     # Block 2: Normalization and Scaling
     # ==========================================
     start.record()
-    
-    # 2. Normalize EVERYTHING first
     if normalize:
         f_s = normalize_mean_std(f_s)
         f_t = normalize_mean_std(f_t)
@@ -327,54 +319,59 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     else:
         protos_norm = protos
 
-    # 3. Create the two Prototype Pathways
     protos_unscaled = protos_norm 
     protos_scaled = ScaleGradient.apply(protos_norm, grad_scale)
-
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 2] Normalization & Scaling: {start.elapsed_time(end):.3f} ms")
+    print(f"[Block 2] Normalization:         {start.elapsed_time(end):.3f} ms")
 
     # ==========================================
-    # Block 3: Pathway A - Student Sinkhorn
+    # Block 3: Student L2 Distance
     # ==========================================
     start.record()
-    
     M_s = L2_dist(f_s, protos_unscaled)
-    # This is highly likely to be a bottleneck due to dist.all_reduce
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 3] Student L2 & Sinkhorn:   {start.elapsed_time(end):.3f} ms")
+    print(f"[Block 3] Student L2 Dist:       {start.elapsed_time(end):.3f} ms")
 
     # ==========================================
-    # Block 4: Pathway A - Teacher Sinkhorn
+    # Block 4: Student Sinkhorn
     # ==========================================
     start.record()
-    
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    end.record()
+    torch.cuda.synchronize()
+    print(f"[Block 4] Student Sinkhorn:      {start.elapsed_time(end):.3f} ms")
+
+    # ==========================================
+    # Block 5: Teacher L2 Distance & Softmax
+    # ==========================================
+    start.record()
     M_t = L2_dist(f_t, protos_unscaled)
     p2 = F.softmax(-M_t / temperature, dim=2)
-    # This is also highly likely to be a bottleneck
-    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 4] Teacher L2 & Sinkhorn:   {start.elapsed_time(end):.3f} ms")
+    print(f"[Block 5] Teacher L2 & Softmax:  {start.elapsed_time(end):.3f} ms")
 
     # ==========================================
-    # Block 5: Pathway B and Final Loss Math
+    # Block 6: Teacher Sinkhorn
     # ==========================================
     start.record()
-    
-    # Pathway B: For Loss 1 and Loss 3 (10% Gradient)
+    q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    end.record()
+    torch.cuda.synchronize()
+    print(f"[Block 6] Teacher Sinkhorn:      {start.elapsed_time(end):.3f} ms")
+
+    # ==========================================
+    # Block 7: Scaled Pathway and Final Loss Math
+    # ==========================================
+    start.record()
     M_s_scaled = L2_dist(f_s, protos_scaled)
     p1_scaled = F.softmax(-M_s_scaled / temperature, dim=2)
 
     M_t_scaled = L2_dist(f_t, protos_scaled)
     p2_scaled = F.softmax(-M_t_scaled / temperature, dim=2)
     
-    # Loss Calculation
     if distance == 'MSE':
         diff12 = q1 - p2
         diff21 = q2 - p1_scaled 
@@ -390,8 +387,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
 
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 5] Scaled Pathway & Loss:   {start.elapsed_time(end):.3f} ms")
-    print("-" * 50) # Visual separator for the next batch
+    print(f"[Block 7] Scaled Math & Loss:    {start.elapsed_time(end):.3f} ms")
+    print("-" * 50) 
 
     dev = loss_mf_rand.device
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
