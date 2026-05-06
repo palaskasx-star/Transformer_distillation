@@ -355,7 +355,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
 
     # --- Block 4: Student Sinkhorn ---
     start.record()
-    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
+    q1 = distributed_sinkhorn(M_s.detach(), nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     end.record()
     torch.cuda.synchronize()
     _mf_timers['sinkhorn_student'].update(start.elapsed_time(end))
