@@ -26,22 +26,33 @@ class ScaleGradient(torch.autograd.Function):
     def backward(ctx, grad_output):
         return grad_output * ctx.scale, None
 
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
+class TimeMeter:
     def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
+        self.sum = 0.0
         self.count = 0
 
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
+    def update(self, val):
+        self.sum += val
+        self.count += 1
+
+    def avg(self):
+        return self.sum / self.count if self.count > 0 else 0.0
+
+    def reset(self):
+        self.sum = 0.0
+        self.count = 0
+
+# 2. Initialize global meters and an iteration counter
+_mf_timers = {
+    'setup': TimeMeter(),
+    'norm': TimeMeter(),
+    'l2_student': TimeMeter(),
+    'sinkhorn_student': TimeMeter(),
+    'l2_teacher': TimeMeter(),
+    'sinkhorn_teacher': TimeMeter(),
+    'scaled_loss': TimeMeter(),
+}
+_mf_iters = 0
 
 
 class DistillationLoss(nn.Module):
@@ -182,17 +193,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
             else:
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_rand(
                     F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
-        batch_size = inputs.size(0)
-        loss_mf_rand_meter.update(loss_mf_rand.item(), batch_size)
-        loss_koleo_rand_meter.update(loss_KoLeo_rand_data.item(), batch_size)
-        total_loss_meter.update(total_loss.item(), batch_size)
-
-        if (i + 1) % 100 == 0:
-            print(f"Iter [{i+1}/{len(train_loader)}] "
-                  f"Total Loss: {total_loss_meter.avg:.4f} | "
-                  f"MF Rand: {loss_mf_rand_meter.avg:.4f} | "
-                  f"KoLeo Rand: {loss_koleo_rand_meter.avg:.4f}")
-        
+                
         # Reset meters for the next 100 iterations
         loss_mf_rand_meter.reset()
         loss_koleo_rand_meter.reset()
@@ -318,30 +319,24 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
 def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, 
                                   prototypes=None, projectors_net=None, KoLeoData=None, 
                                   KoLeoPrototypes=None, temperature=0.1, grad_scale=0.0, world_size=1):
+    global _mf_timers, _mf_iters
     
-    # Setup CUDA timers
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
 
-    # ==========================================
-    # Block 1: Setup, Sampling, and Projection
-    # ==========================================
+    # --- Block 1: Setup ---
     start.record()
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num, device=F_s.device)[:K]
-
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_s = projectors_net.projs[2](f_s)
-
     protos = prototypes.protos[2].unsqueeze(0)
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 1] Sampling & Proj:       {start.elapsed_time(end):.3f} ms")
+    _mf_timers['setup'].update(start.elapsed_time(end))
 
-    # ==========================================
-    # Block 2: Normalization and Scaling
-    # ==========================================
+    # --- Block 2: Normalization ---
     start.record()
     if normalize:
         f_s = normalize_mean_std(f_s)
@@ -349,53 +344,42 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
         protos_norm = normalize_mean_std(protos)
     else:
         protos_norm = protos
-
     protos_unscaled = protos_norm 
     protos_scaled = ScaleGradient.apply(protos_norm, grad_scale)
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 2] Normalization:         {start.elapsed_time(end):.3f} ms")
+    _mf_timers['norm'].update(start.elapsed_time(end))
 
-    # ==========================================
-    # Block 3: Student L2 Distance
-    # ==========================================
+    # --- Block 3: Student L2 ---
     start.record()
     M_s = L2_dist(f_s, protos_unscaled)
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 3] Student L2 Dist:       {start.elapsed_time(end):.3f} ms")
+    _mf_timers['l2_student'].update(start.elapsed_time(end))
 
-    # ==========================================
-    # Block 4: Student Sinkhorn
-    # ==========================================
+    # --- Block 4: Student Sinkhorn ---
     start.record()
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 4] Student Sinkhorn:      {start.elapsed_time(end):.3f} ms")
+    _mf_timers['sinkhorn_student'].update(start.elapsed_time(end))
 
-    # ==========================================
-    # Block 5: Teacher L2 Distance & Softmax
-    # ==========================================
+    # --- Block 5: Teacher L2 ---
     start.record()
     M_t = L2_dist(f_t, protos_unscaled)
     p2 = F.softmax(-M_t / temperature, dim=2)
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 5] Teacher L2 & Softmax:  {start.elapsed_time(end):.3f} ms")
+    _mf_timers['l2_teacher'].update(start.elapsed_time(end))
 
-    # ==========================================
-    # Block 6: Teacher Sinkhorn
-    # ==========================================
+    # --- Block 6: Teacher Sinkhorn ---
     start.record()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 6] Teacher Sinkhorn:      {start.elapsed_time(end):.3f} ms")
+    _mf_timers['sinkhorn_teacher'].update(start.elapsed_time(end))
 
-    # ==========================================
-    # Block 7: Scaled Pathway and Final Loss Math
-    # ==========================================
+    # --- Block 7: Scaled Math & Loss ---
     start.record()
     M_s_scaled = L2_dist(f_s, protos_scaled)
     p1_scaled = F.softmax(-M_s_scaled / temperature, dim=2)
@@ -404,22 +388,32 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     p2_scaled = F.softmax(-M_t_scaled / temperature, dim=2)
     
     if distance == 'MSE':
-        diff12 = q1 - p2
-        diff21 = q2 - p1_scaled 
-        loss12 = (diff12 * diff12).mean()
-        loss21 = (diff21 * diff21).mean()
-        loss_mf_rand = (loss12 + loss21) / 2 
-        
+        loss_mf_rand = ((q1 - p2).pow(2).mean() + (q2 - p1_scaled).pow(2).mean()) / 2 
     elif distance == 'KL':
-        loss1 = - torch.mean(torch.sum(p2_scaled * torch.log(p1_scaled + 1e-6), dim=2))
-        loss3 = - torch.mean(torch.sum(q1 * torch.log(p1_scaled + 1e-6), dim=2))
-        loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
+        loss1 = -torch.mean(torch.sum(p2_scaled * torch.log(p1_scaled + 1e-6), dim=2))
+        loss3 = -torch.mean(torch.sum(q1 * torch.log(p1_scaled + 1e-6), dim=2))
+        loss2 = -torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
         loss_mf_rand = (loss1 + loss2 + loss3) / 2
 
     end.record()
     torch.cuda.synchronize()
-    print(f"[Block 7] Scaled Math & Loss:    {start.elapsed_time(end):.3f} ms")
-    print("-" * 50) 
+    _mf_timers['scaled_loss'].update(start.elapsed_time(end))
+
+    # --- Print Averages Every 100 Iterations ---
+    _mf_iters += 1
+    if _mf_iters % 100 == 0:
+        print(f"\n[{_mf_iters} iters] mf_loss_prototypes_rand Bottleneck Profiler:")
+        print(f"  Setup:              {_mf_timers['setup'].avg():.3f} ms")
+        print(f"  Normalization:      {_mf_timers['norm'].avg():.3f} ms")
+        print(f"  Student L2 Dist:    {_mf_timers['l2_student'].avg():.3f} ms")
+        print(f"  Student Sinkhorn:   {_mf_timers['sinkhorn_student'].avg():.3f} ms")
+        print(f"  Teacher L2 Dist:    {_mf_timers['l2_teacher'].avg():.3f} ms")
+        print(f"  Teacher Sinkhorn:   {_mf_timers['sinkhorn_teacher'].avg():.3f} ms")
+        print(f"  Scaled Loss Math:   {_mf_timers['scaled_loss'].avg():.3f} ms")
+        print("-" * 50)
+        
+        for key in _mf_timers:
+            _mf_timers[key].reset()
 
     dev = loss_mf_rand.device
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
