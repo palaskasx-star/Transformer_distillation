@@ -397,7 +397,7 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
 
     # --- Print Averages Every 100 Iterations ---
     _mf_iters += 1
-    if _mf_iters % 100 == 0:
+    if _mf_iters % 1000 == 0:
         print(f"\n[{_mf_iters} iters] mf_loss_prototypes_rand Bottleneck Profiler:")
         print(f"  Setup:              {_mf_timers['setup'].avg():.3f} ms")
         print(f"  Normalization:      {_mf_timers['norm'].avg():.3f} ms")
