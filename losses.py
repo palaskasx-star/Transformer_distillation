@@ -26,6 +26,23 @@ class ScaleGradient(torch.autograd.Function):
     def backward(ctx, grad_output):
         return grad_output * ctx.scale, None
 
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
 
 class DistillationLoss(nn.Module):
     """
@@ -165,7 +182,21 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
             else:
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_rand(
                     F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
+        batch_size = inputs.size(0)
+        loss_mf_rand_meter.update(loss_mf_rand.item(), batch_size)
+        loss_koleo_rand_meter.update(loss_KoLeo_rand_data.item(), batch_size)
+        total_loss_meter.update(total_loss.item(), batch_size)
 
+        if (i + 1) % 100 == 0:
+            print(f"Iter [{i+1}/{len(train_loader)}] "
+                  f"Total Loss: {total_loss_meter.avg:.4f} | "
+                  f"MF Rand: {loss_mf_rand_meter.avg:.4f} | "
+                  f"KoLeo Rand: {loss_koleo_rand_meter.avg:.4f}")
+        
+        # Reset meters for the next 100 iterations
+        loss_mf_rand_meter.reset()
+        loss_koleo_rand_meter.reset()
+        total_loss_meter.reset()
         losses[0].append(loss_mf_cls)
         losses[1].append(loss_mf_patch)
         losses[2].append(loss_mf_rand)
