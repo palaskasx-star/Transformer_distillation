@@ -26,34 +26,6 @@ class ScaleGradient(torch.autograd.Function):
     def backward(ctx, grad_output):
         return grad_output * ctx.scale, None
 
-class TimeMeter:
-    def __init__(self):
-        self.sum = 0.0
-        self.count = 0
-
-    def update(self, val):
-        self.sum += val
-        self.count += 1
-
-    def avg(self):
-        return self.sum / self.count if self.count > 0 else 0.0
-
-    def reset(self):
-        self.sum = 0.0
-        self.count = 0
-
-# 2. Initialize global meters and an iteration counter
-_mf_timers = {
-    'setup': TimeMeter(),
-    'norm': TimeMeter(),
-    'l2_student': TimeMeter(),
-    'sinkhorn_student': TimeMeter(),
-    'l2_teacher': TimeMeter(),
-    'sinkhorn_teacher': TimeMeter(),
-    'scaled_loss': TimeMeter(),
-}
-_mf_iters = 0
-
 
 class DistillationLoss(nn.Module):
     """
@@ -193,7 +165,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
             else:
                 loss_mf_rand, loss_KoLeo_rand_data, loss_KoLeo_rand_proto = layer_mf_loss_rand(
                     F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
-                
+
         losses[0].append(loss_mf_cls)
         losses[1].append(loss_mf_patch)
         losses[2].append(loss_mf_rand)
@@ -312,107 +284,74 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, 
-                                  prototypes=None, projectors_net=None, KoLeoData=None, 
-                                  KoLeoPrototypes=None, temperature=0.1, grad_scale=0.0, world_size=1):
-    global _mf_timers, _mf_iters
-    
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-
-    # --- Block 1: Setup ---
-    start.record()
+def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, grad_scale=0.0, world_size=1):
     bsz, patch_num, _ = F_s.shape
-    sampler = torch.randperm(bsz * patch_num, device=F_s.device)[:K]
+    sampler = torch.randperm(bsz * patch_num)[:K]
+
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_s = projectors_net.projs[2](f_s)
-    protos = prototypes.protos[2].unsqueeze(0)
-    end.record()
-    torch.cuda.synchronize()
-    _mf_timers['setup'].update(start.elapsed_time(end))
 
-    # --- Block 2: Normalization ---
-    start.record()
+    # 1. Extract base prototypes
+    protos = prototypes.protos[2].unsqueeze(0)
+
+    # 2. Normalize EVERYTHING first so normalization doesn't interfere with the scaler
     if normalize:
         f_s = normalize_mean_std(f_s)
         f_t = normalize_mean_std(f_t)
         protos_norm = normalize_mean_std(protos)
     else:
         protos_norm = protos
+
+    # 3. Create the two Prototype Pathways
     protos_unscaled = protos_norm 
     protos_scaled = ScaleGradient.apply(protos_norm, grad_scale)
-    end.record()
-    torch.cuda.synchronize()
-    _mf_timers['norm'].update(start.elapsed_time(end))
 
-    # --- Block 3: Student L2 ---
-    start.record()
+    # ==========================================
+    # Pathway A: For Sinkhorn and Loss 2 (100% Gradient)
+    # ==========================================
     M_s = L2_dist(f_s, protos_unscaled)
-    end.record()
-    torch.cuda.synchronize()
-    _mf_timers['l2_student'].update(start.elapsed_time(end))
+    # q1 is detached, so it doesn't pass gradients backward anyway
+    q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
-    # --- Block 4: Student Sinkhorn ---
-    start.record()
-    q1 = distributed_sinkhorn(M_s.detach(), nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    end.record()
-    torch.cuda.synchronize()
-    _mf_timers['sinkhorn_student'].update(start.elapsed_time(end))
-
-    # --- Block 5: Teacher L2 ---
-    start.record()
     M_t = L2_dist(f_t, protos_unscaled)
     p2 = F.softmax(-M_t / temperature, dim=2)
-    end.record()
-    torch.cuda.synchronize()
-    _mf_timers['l2_teacher'].update(start.elapsed_time(end))
-
-    # --- Block 6: Teacher Sinkhorn ---
-    start.record()
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
-    end.record()
-    torch.cuda.synchronize()
-    _mf_timers['sinkhorn_teacher'].update(start.elapsed_time(end))
 
-    # --- Block 7: Scaled Math & Loss ---
-    start.record()
+    # ==========================================
+    # Pathway B: For Loss 1 and Loss 3 (10% Gradient)
+    # ==========================================
     M_s_scaled = L2_dist(f_s, protos_scaled)
     p1_scaled = F.softmax(-M_s_scaled / temperature, dim=2)
 
     M_t_scaled = L2_dist(f_t, protos_scaled)
     p2_scaled = F.softmax(-M_t_scaled / temperature, dim=2)
     
+    # ==========================================
+    # Loss Calculation
+    # ==========================================
     if distance == 'MSE':
-        loss_mf_rand = ((q1 - p2).pow(2).mean() + (q2 - p1_scaled).pow(2).mean()) / 2 
-    elif distance == 'KL':
-        loss1 = -torch.mean(torch.sum(p2_scaled * torch.log(p1_scaled + 1e-6), dim=2))
-        loss3 = -torch.mean(torch.sum(q1 * torch.log(p1_scaled + 1e-6), dim=2))
-        loss2 = -torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
-        loss_mf_rand = (loss1 + loss2 + loss3) / 2
-
-    end.record()
-    torch.cuda.synchronize()
-    _mf_timers['scaled_loss'].update(start.elapsed_time(end))
-
-    # --- Print Averages Every 100 Iterations ---
-    _mf_iters += 1
-    if _mf_iters % 1000 == 0:
-        print(f"\n[{_mf_iters} iters] mf_loss_prototypes_rand Bottleneck Profiler:")
-        print(f"  Setup:              {_mf_timers['setup'].avg():.3f} ms")
-        print(f"  Normalization:      {_mf_timers['norm'].avg():.3f} ms")
-        print(f"  Student L2 Dist:    {_mf_timers['l2_student'].avg():.3f} ms")
-        print(f"  Student Sinkhorn:   {_mf_timers['sinkhorn_student'].avg():.3f} ms")
-        print(f"  Teacher L2 Dist:    {_mf_timers['l2_teacher'].avg():.3f} ms")
-        print(f"  Teacher Sinkhorn:   {_mf_timers['sinkhorn_teacher'].avg():.3f} ms")
-        print(f"  Scaled Loss Math:   {_mf_timers['scaled_loss'].avg():.3f} ms")
-        print("-" * 50)
+        # Assuming you want the same logic for MSE
+        diff12 = q1 - p2
+        diff21 = q2 - p1_scaled # Replaced p1 with p1_scaled
+        loss12 = (diff12 * diff12).mean()
+        loss21 = (diff21 * diff21).mean()
+        loss_mf_rand = (loss12 + loss21) / 2 # Adjust based on your MSE needs
         
-        for key in _mf_timers:
-            _mf_timers[key].reset()
+    elif distance == 'KL':
+        # Loss 1 & 3 use p1_scaled (routes through protos_scaled)
+        loss1 = - torch.mean(torch.sum(p2_scaled * torch.log(p1_scaled + 1e-6), dim=2))
+        loss3 = - torch.mean(torch.sum(q1 * torch.log(p1_scaled + 1e-6), dim=2))
+        
+        # Loss 2 uses p2 (routes through protos_unscaled)
+        loss2 = - torch.mean(torch.sum(q2 * torch.log(p2 + 1e-6), dim=2))
+
+    loss_mf_rand = (loss1 + loss2 + loss3) / 2
+    #loss_mf_rand = (loss1) / 2
 
     dev = loss_mf_rand.device
     return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+
                                       
 def layer_mf_loss_prototypes_patch(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, KoLeoData=None, KoLeoPrototypes=None, temperature=0.1, world_size=1):
     # exclude the cls token if esists
