@@ -25,7 +25,6 @@ python -m torch.distributed.run \
     --t-id 0 3 5 8 11 \
     --drop-path 0 \
     --batch-size 256 \
-    --num_workers 26 \
     --use-prototypes \
     --prototypes-number 3000 \
     --sigma 0.1 \
@@ -39,6 +38,7 @@ python -m torch.distributed.run \
     --nproc_per_node=4 \
     --master_port=29500 \
     main.py \
+    --batch-size 256 \
     --data-path /path/to/imagenet \
     --model vit_tiny_patch16_dinov3 \
     --output_dir ./experiments/
