@@ -1,9 +1,8 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
 #
-# This source code is licensed under the CC-by-NC license found in the
-# LICENSE file in the root directory of this source tree.
-#
+# 2026.5.6-Changed for building ConceptKD (c) 2024 PalaskasChristos
+
 
 import torch
 import torch.nn as nn
