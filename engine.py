@@ -40,9 +40,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             # loss = criterion(samples, outputs, targets)
-            loss_base, loss_dist, loss_mf_rand = criterion(samples, outputs, targets)
+            loss_base, loss_dist, loss_concept = criterion(samples, outputs, targets)
         
-        loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + args.delta * loss_mf_rand 
+        loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + args.delta * loss_concept 
     
 
         loss_value = loss.item()
@@ -67,7 +67,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         metric_logger.update(loss=loss_value)
         metric_logger.update(loss_base=loss_base.item())
         metric_logger.update(loss_dist=loss_dist.item())
-        metric_logger.update(loss_mf_rand=loss_mf_rand.item())
+        metric_logger.update(loss_concept=loss_concept.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
     # gather the stats from all processes
@@ -77,7 +77,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     if writer is not None:
         writer.add_scalar('Train/Loss/base_loss', metric_logger.loss_base.global_avg, epoch)
         writer.add_scalar('Train/Loss/distillation_loss', metric_logger.loss_dist.global_avg, epoch)
-        writer.add_scalar('Train/Loss/mf_loss_rand', metric_logger.loss_mf_rand.global_avg, epoch)
+        writer.add_scalar('Train/Loss/loss_concept', metric_logger.loss_concept.global_avg, epoch)
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -109,7 +109,7 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
         metric_logger.update(loss=loss.item())
         metric_logger.update(loss_base=loss_base.item())
         metric_logger.update(loss_dist=loss_dist.item())
-        metric_logger.update(loss_mf_rand=loss_mf_rand.item())
+        metric_logger.update(loss_concept=loss_concept.item())
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
@@ -124,6 +124,6 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
         writer.add_scalar('Test/Loss', metric_logger.loss.global_avg, epoch)
         writer.add_scalar('Test/Loss/base_loss', metric_logger.loss_base.global_avg, epoch)
         writer.add_scalar('Test/Loss/distillation_loss', metric_logger.loss_dist.global_avg, epoch)
-        writer.add_scalar('Test/Loss/mf_loss_rand', metric_logger.loss_mf_rand.global_avg, epoch)  
+        writer.add_scalar('Test/Loss/loss_concept', metric_logger.loss_concept.global_avg, epoch)  
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
