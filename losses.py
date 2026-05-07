@@ -114,7 +114,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=F
 
         dev = F_t.device
 
-        if prototypes[idx].protos[0] is not None or prototypes[idx].protos[1] is not None or prototypes[idx].protos[2] is not None:
+        if prototypes[idx].protos[0] is not None:
             if delta == 0.0:
                 loss_mf_rand = torch.tensor(0.0, device=dev)
             else:
@@ -164,9 +164,9 @@ def layer_loss_w_concepts(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8
 
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
-    f_s = projectors_net.projs[2](f_s)
+    f_s = projectors_net.projs[0](f_s)
 
-    protos = prototypes.protos[2].unsqueeze(0)
+    protos = prototypes.protos[0].unsqueeze(0)
 
     if normalize:
         f_s = normalize_mean_std(f_s)
@@ -217,43 +217,36 @@ def distributed_sinkhorn(out, nmb_iters=3, epsilon=0.05, world_size=1):
     exponential_max, _ = torch.max(exponential, dim=2, keepdim=True)
     exponential = exponential - exponential_max
     
-    Q = torch.exp(exponential).permute(0, 2, 1)  # Q is K-by-B for consistency with notations from our paper
-    B = Q.shape[2] * world_size # number of samples to assign
-    K = Q.shape[1] # how many prototypes
+    Q = torch.exp(exponential).permute(0, 2, 1)
+    B = Q.shape[2] * world_size
+    K = Q.shape[1]
 
-    # make the matrix sums to 1
     sum_Q = Q.sum(dim=(1, 2), keepdim=True)
     dist.all_reduce(sum_Q)
     Q /= sum_Q
 
     for it in range(nmb_iters):
-        # normalize each row: total weight per prototype must be 1/K
         sum_of_rows = torch.sum(Q, dim=2, keepdim=True)
         dist.all_reduce(sum_of_rows)
         Q /= sum_of_rows
         Q /= K
-
-        # normalize each column: total weight per sample must be 1/B
+        
         Q /= torch.sum(Q, dim=1, keepdim=True)
         Q /= B
-
-    Q *= B # the colomns must sum to 1 so that Q is an assignment
+        
+    Q *= B 
     return Q.permute(0, 2, 1)
 
 def cosine_kernel(x, p):
-    # In 3D (B, F, S), the 'S' dimension is now dim=2
     x = F.normalize(x, p=2, dim=2)  
     p = F.normalize(p, p=2, dim=2)  
     
-    # torch.bmm: (B, F, S) @ (B, S, F) -> (B, F, F)
     cosine_similarity = torch.bmm(x, p.transpose(1, 2))
     return cosine_similarity
 
 def L2_dist(x, p):
-    # cdist on (B, F, S) natively computes distance between F points -> (B, F, F)
     dist = torch.cdist(x, p, p=2)  
     
-    # Divide by S, which is now x.shape[2] in the 3D tensor
     dist_sq = dist.pow(2) / x.shape[2]  
     return dist_sq
 
