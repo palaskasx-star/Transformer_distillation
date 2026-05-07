@@ -49,8 +49,6 @@ class DistillationLoss(nn.Module):
         self.prototypes = prototypes
         self.projectors_nets = projectors_nets
 
-        self.delta = args.delta
-
         self.sigma = args.sigma
 
         self.grad_scale = args.grad_scale
@@ -97,11 +95,11 @@ class DistillationLoss(nn.Module):
 
         loss_base = base_loss
         loss_dist = distillation_loss
-        loss_concept= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, delta=self.delta, sigma=self.sigma, grad_scale=self.grad_scale)  # manifold distillation loss
+        loss_concept= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, sigma=self.sigma, grad_scale=self.grad_scale)  # manifold distillation loss
         return loss_base, loss_dist, loss_concept
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, sigma=0.1, grad_scale=0.0):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, prototypes=None, projectors_nets=None, world_size=1, sigma=0.1, grad_scale=0.0):
     losses = [] 
 
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
