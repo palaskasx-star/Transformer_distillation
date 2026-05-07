@@ -198,7 +198,7 @@ def get_args_parser():
 
     # my parameters
     parser.add_argument('--w_concept', default=1.0, type=float)
-    parser.add_argument('--K', default=192, type=int)
+    parser.add_argument('--K', default=6304, type=int)
 
     parser.add_argument('--s-id', nargs='+', type=int, default=[-1])
     parser.add_argument('--t-id', nargs='+', type=int, default=[-1])
