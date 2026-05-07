@@ -209,10 +209,6 @@ def get_args_parser():
     parser.add_argument('--use-prototypes', action='store_true')
     parser.add_argument('--prototypes-number', default=3000, type=int)
 
-
-    parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
-                help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
-    
     parser.add_argument('--orthogonal-projector', action='store_true',
                 help='Apply orthogonal parametrization to the linear projector.')
 
@@ -299,7 +295,7 @@ def main(args):
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
     if args.distillation_type != 'none':
-        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_d_{args.distance}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.delta}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
+        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_normalize_{args.normalize}_d_{args.distance}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.delta}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
         if args.use_prototypes:
             extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
     else:
@@ -474,19 +470,9 @@ def main(args):
                     torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
                     proto = torch.nn.Parameter(proto, requires_grad=not args.freeze_prototypes)
                 proto_list.append(proto)
-
-                if getattr(args, 'projector_type', 'matrix') == 'MLP':
-                    hidden_dim = 2048
-                    
-                    projector = torch.nn.Sequential(
-                        torch.nn.Linear(feature_dim_student, hidden_dim),
-                        torch.nn.GELU(),
-                        torch.nn.Linear(hidden_dim, feature_dim_teacher)
-                    ).to(device)
-                else:
-                    projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
-                    if args.orthogonal_projector:
-                        projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
+                projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                if args.orthogonal_projector:
+                    projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
                 projector_list.append(projector)
 
             prototypes.append(proto_list)
