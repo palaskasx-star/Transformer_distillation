@@ -207,16 +207,8 @@ def get_args_parser():
     parser.add_argument('--distance', default='MSE', choices=['MSE', 'KL'], type=str, help="")
 
     parser.add_argument('--use-prototypes', action='store_true')
-    parser.add_argument(
-        '--prototypes-number', 
-        default=[256, 512, 1024],  # Provide a list as the default
-        type=int,                  # Each element in the list will be converted to an int
-        nargs=3,                   # Specifically requires 3 arguments
-        help="[Cls, Patch, Rand] number of prototypes"
-    )
+    parser.add_argument('--prototypes-number', default=3000, type=int)
 
-    parser.add_argument('--KoLeoData', default=0.1, type=float)
-    parser.add_argument('--KoLeoPrototypes', default=0.1, type=float)
 
     parser.add_argument('--projector-type', type=str, default='matrix', choices=['matrix', 'MLP'],
                 help='Type of projector to use: "matrix" for a single Linear layer, or "MLP" for a 2-layer network.')
@@ -307,7 +299,7 @@ def main(args):
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
     if args.distillation_type != 'none':
-        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_d_{args.distance}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.delta}_KoLeoD_{args.KoLeoData}_KoLeoP_{args.KoLeoPrototypes}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
+        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_proj_{args.projector_type}_normalize_{args.normalize}_d_{args.distance}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.delta}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
         if args.use_prototypes:
             extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
     else:
@@ -468,22 +460,16 @@ def main(args):
             # Create 3 prototype matrices and 3 projectors for each i
             proto_list = []
             projector_list = []
-
-            proto_list.append(None)
-            projector_list.append(None)
-
-            proto_list.append(None)
-            projector_list.append(None)
                 
             if args.delta == 0.0:
                 proto_list.append(None)
                 projector_list.append(None)
             else:
                 if custom_centroids is not None and i < len(custom_centroids):
-                    proto = custom_centroids[i][:args.prototypes_number[2], :].clone()
+                    proto = custom_centroids[i][:args.prototypes_number, :].clone()
                     proto = torch.nn.Parameter(proto, requires_grad=False)
                 else:
-                    proto = torch.empty(args.prototypes_number[2], feature_dim_teacher, device=device)
+                    proto = torch.empty(args.prototypes_number, feature_dim_teacher, device=device)
                     _sqrt_k = (1. / feature_dim_teacher) ** 0.5
                     torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
                     proto = torch.nn.Parameter(proto, requires_grad=not args.freeze_prototypes)
@@ -514,9 +500,8 @@ def main(args):
         for i, feat in enumerate(args.s_id):
             proto_list = []
             projector_list = []
-            for j in range(3):
-                proto_list.append(None)
-                projector_list.append(None)
+            proto_list.append(None)
+            projector_list.append(None)
             prototypes.append(proto_list)
             projectors_nets.append(projector_list)
 
