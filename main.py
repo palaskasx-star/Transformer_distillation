@@ -44,18 +44,9 @@ def get_writer(output_dir):
     return writer
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('Manifold Distillation', add_help=False)
+    parser = argparse.ArgumentParser('Concept Knowledge Distillation', add_help=False)
     parser.add_argument('--batch-size', default=64, type=int)
     parser.add_argument('--epochs', default=300, type=int)
-
-    # MD parameters
-    parser.add_argument('--distillation-beta', default=1.0, type=float)
-    parser.add_argument('--gamma', default=1.0, type=float)
-    parser.add_argument('--delta', default=1.0, type=float)
-    parser.add_argument('--K', default=192, type=int)
-
-    parser.add_argument('--s-id', nargs='+', type=int, default=[-1])
-    parser.add_argument('--t-id', nargs='+', type=int, default=[-1])
 
     # Model parameters
     parser.add_argument('--model', default='deit_base_patch16_224', type=str, metavar='MODEL',
@@ -206,9 +197,14 @@ def get_args_parser():
     )
 
     # my parameters
+    parser.add_argument('--delta', default=1.0, type=float)
+    parser.add_argument('--K', default=192, type=int)
+
+    parser.add_argument('--s-id', nargs='+', type=int, default=[-1])
+    parser.add_argument('--t-id', nargs='+', type=int, default=[-1])
+    
     parser.add_argument('--normalize', action='store_true')
     parser.add_argument('--distance', default='MSE', choices=['MSE', 'KL'], type=str, help="")
-
 
     parser.add_argument('--use-prototypes', action='store_true')
     parser.add_argument(
@@ -478,11 +474,9 @@ def main(args):
                 projector_list.append(None)
             else:
                 if custom_centroids is not None and i < len(custom_centroids):
-                    # Slice the loaded centroids to match requested number (e.g., 256) and FREEZE
                     proto = custom_centroids[i][:args.prototypes_number[0], :].clone()
                     proto = torch.nn.Parameter(proto, requires_grad=False)
                 else:
-                    # Fallback to original random trainable initialization
                     proto = torch.empty(args.prototypes_number[0], feature_dim_teacher, device=device)
                     _sqrt_k = (1. / feature_dim_teacher) ** 0.5
                     torch.nn.init.uniform_(proto, -_sqrt_k, _sqrt_k)
