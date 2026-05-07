@@ -407,17 +407,14 @@ def main(args):
     class ProtoProjectorWrapper(torch.nn.Module):
         def __init__(self, prototypes, projectors):
             super().__init__()
-            # Each element in prototypes and projectors corresponds to one s_id entry (each has 3 elements)
             self.prototypes = torch.nn.ModuleList()
             self.projectors = torch.nn.ModuleList()
 
             for proto_list, proj_list in zip(prototypes, projectors):
-                # Wrap each group of 3 prototypes in a submodule with ParameterList
                 proto_module = torch.nn.Module()
                 proto_module.protos = torch.nn.ParameterList(proto_list)
                 self.prototypes.append(proto_module)
 
-                # Wrap each group of 3 projectors in a submodule with ModuleList
                 proj_module = torch.nn.Module()
                 proj_module.projs = torch.nn.ModuleList(proj_list)
                 self.projectors.append(proj_module)
