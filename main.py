@@ -1,9 +1,8 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
 #
-# 2022.10.14-Changed for building manifold kd
-#            Huawei Technologies Co., Ltd. <foss@huawei.com>
-#
+# 2026.5.6-Changed for building ConceptKD (c) 2024 PalaskasChristos
+
 
 import argparse
 import datetime
