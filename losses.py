@@ -105,7 +105,7 @@ class DistillationLoss(nn.Module):
 
 
 def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, temperature=0.1, grad_scale=0.0):
-    losses = [[]] 
+    losses = [] 
 
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         extra_tk_num = block_outs_s[id_s].shape[1] - block_outs_t[id_t].shape[1]
@@ -127,10 +127,9 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=F
                 loss_mf_rand = layer_loss_wo_concepts(
                     F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
 
-        losses[2].append(loss_mf_rand)
+        losses.append(loss_mf_rand)
         
-        
-    loss_mf_rand = sum(losses[0]) / len(losses[0])
+    loss_mf_rand = sum(losses) / len(losses)
     
     return loss_mf_rand
 
