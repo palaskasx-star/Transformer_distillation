@@ -65,8 +65,6 @@ class DistillationLoss(nn.Module):
                 in the first position and the distillation predictions as the second output
             labels: the labels for the base criterion
         """
-        # only consider the case of [outputs, block_outs_s] or [(outputs, outputs_kd), block_outs_s]
-        # i.e. 'require_feat' is always True when we compute loss
         block_outs_s = outputs[1]
         if isinstance(outputs[0], torch.Tensor):
             outputs = outputs_kd = outputs[0]
@@ -95,7 +93,7 @@ class DistillationLoss(nn.Module):
 
         loss_base = base_loss
         loss_dist = distillation_loss
-        loss_concept= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, sigma=self.sigma, grad_scale=self.grad_scale)  # manifold distillation loss
+        loss_concept= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, sigma=self.sigma, grad_scale=self.grad_scale)
         return loss_base, loss_dist, loss_concept
 
 
