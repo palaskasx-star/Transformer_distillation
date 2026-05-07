@@ -2,7 +2,7 @@
 
 Teacher weights download:
 ```bash
-wget -O vit_small_patch16_dinov3.lvd1689m.bin [https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin](https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin)
+wget -O vit_small_patch16_dinov3.lvd1689m.bin https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin
 ```
 
 Train a ViT-T* using a DINOv3 ViT-S* pretrained teacher:
