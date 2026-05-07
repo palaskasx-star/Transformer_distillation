@@ -99,11 +99,11 @@ class DistillationLoss(nn.Module):
 
         loss_base = base_loss
         loss_dist = distillation_loss
-        loss_mf_rand= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, normalize=self.normalize, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, delta=self.delta, sigma=self.sigma, grad_scale=self.grad_scale)  # manifold distillation loss
+        loss_mf_rand= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, delta=self.delta, sigma=self.sigma, grad_scale=self.grad_scale)  # manifold distillation loss
         return loss_base, loss_dist, loss_mf_rand
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=False, prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, sigma=0.1, grad_scale=0.0):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, sigma=0.1, grad_scale=0.0):
     losses = [] 
 
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
@@ -115,10 +115,10 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=F
 
         if prototypes[idx].protos[0] is not None:
             loss_mf_rand = layer_loss_w_concepts(
-                F_s, F_t, K, normalize=normalize, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, sigma=sigma, grad_scale=grad_scale)
+                F_s, F_t, K, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, sigma=sigma, grad_scale=grad_scale)
         else:  
             loss_mf_rand = layer_loss_wo_concepts(
-                F_s, F_t, K, normalize=normalize, sigma=sigma)
+                F_s, F_t, K, sigma=sigma)
 
         losses.append(loss_mf_rand)
         
@@ -126,16 +126,15 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=F
     
     return loss_mf_rand
 
-def layer_loss_wo_concepts(F_s, F_t, K, normalize=False, sigma=0.1, eps=1e-8): 
+def layer_loss_wo_concepts(F_s, F_t, K, sigma=0.1, eps=1e-8): 
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
 
-    if normalize:
-        f_s = normalize_mean_std(f_s)
-        f_t = normalize_mean_std(f_t)
+    f_s = normalize_mean_std(f_s)
+    f_t = normalize_mean_std(f_t)
 
     M_s = L2_dist(f_s, f_s)
     M_t = L2_dist(f_t, f_t) 
@@ -146,7 +145,7 @@ def layer_loss_wo_concepts(F_s, F_t, K, normalize=False, sigma=0.1, eps=1e-8):
     
     return loss_mf_rand
 
-def layer_loss_w_concepts(F_s, F_t, K, normalize=False, eps=1e-8, prototypes=None, projectors_net=None, sigma=0.1, grad_scale=0.0, world_size=1):
+def layer_loss_w_concepts(F_s, F_t, K, eps=1e-8, prototypes=None, projectors_net=None, sigma=0.1, grad_scale=0.0, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
@@ -156,12 +155,9 @@ def layer_loss_w_concepts(F_s, F_t, K, normalize=False, eps=1e-8, prototypes=Non
 
     protos = prototypes.protos[0].unsqueeze(0)
 
-    if normalize:
-        f_s = normalize_mean_std(f_s)
-        f_t = normalize_mean_std(f_t)
-        protos_norm = normalize_mean_std(protos)
-    else:
-        protos_norm = protos
+    f_s = normalize_mean_std(f_s)
+    f_t = normalize_mean_std(f_t)
+    protos_norm = normalize_mean_std(protos)
 
     protos_unscaled = protos_norm 
     protos_scaled = ScaleGradient.apply(protos_norm, grad_scale)
