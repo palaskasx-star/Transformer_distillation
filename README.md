@@ -39,6 +39,7 @@ python -m torch.distributed.run \
     --master_port=29500 \
     main.py \
     --batch-size 256 \
+    --drop-path 0 \
     --data-path /path/to/imagenet \
     --model vit_tiny_patch16_dinov3 \
     --output_dir ./experiments/
