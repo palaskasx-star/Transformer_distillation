@@ -54,7 +54,7 @@ class DistillationLoss(nn.Module):
 
         self.delta = args.delta
 
-        self.temperature = args.temperature
+        self.sigma = args.sigma
 
         self.grad_scale = args.grad_scale
 
@@ -100,11 +100,11 @@ class DistillationLoss(nn.Module):
 
         loss_base = base_loss
         loss_dist = distillation_loss
-        loss_mf_rand= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, delta=self.delta, temperature=self.temperature, grad_scale=self.grad_scale)  # manifold distillation loss
+        loss_mf_rand= mf_loss(block_outs_s, block_outs_t, self.layer_ids_s, self.layer_ids_t, self.K, normalize=self.normalize, distance=self.distance, prototypes=self.prototypes, projectors_nets=self.projectors_nets, world_size=self.world_size, delta=self.delta, sigma=self.sigma, grad_scale=self.grad_scale)  # manifold distillation loss
         return loss_base, loss_dist, loss_mf_rand
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, temperature=0.1, grad_scale=0.0):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, sigma=0.1, grad_scale=0.0):
     losses = [] 
 
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
@@ -119,13 +119,13 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=F
                 loss_mf_rand = torch.tensor(0.0, device=dev)
             else:
                 loss_mf_rand = layer_loss_w_concepts(
-                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, temperature=temperature, grad_scale=grad_scale)
+                    F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, sigma=sigma, grad_scale=grad_scale)
         else:  
             if delta == 0.0:
                 loss_mf_rand = torch.tensor(0.0, device=dev)
             else:
                 loss_mf_rand = layer_loss_wo_concepts(
-                    F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
+                    F_s, F_t, K, normalize=normalize, distance=distance, sigma=sigma)
 
         losses.append(loss_mf_rand)
         
@@ -133,7 +133,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=F
     
     return loss_mf_rand
 
-def layer_loss_wo_concepts(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8): 
+def layer_loss_wo_concepts(F_s, F_t, K, normalize=False, distance='MSE', sigma=0.1, eps=1e-8): 
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
@@ -151,14 +151,14 @@ def layer_loss_wo_concepts(F_s, F_t, K, normalize=False, distance='MSE', tempera
         M_diff = M_t - M_s
         loss_mf_rand = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = F.softmax(-M_t/ temperature, dim=2)
-        M_t = F.softmax(-M_s/ temperature, dim=2)
+        M_s = F.softmax(-M_t/ sigma, dim=2)
+        M_t = F.softmax(-M_s/ sigma, dim=2)
         loss_mf_rand = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2)) / 2
     dev = loss_mf_rand.device
     
     return loss_mf_rand
 
-def layer_loss_w_concepts(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, grad_scale=0.0, world_size=1):
+def layer_loss_w_concepts(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, sigma=0.1, grad_scale=0.0, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
@@ -182,14 +182,14 @@ def layer_loss_w_concepts(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8
     q1 = distributed_sinkhorn(M_s, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     M_t = L2_dist(f_t, protos_unscaled)
-    p2 = F.softmax(-M_t / temperature, dim=2)
+    p2 = F.softmax(-M_t / sigma, dim=2)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
     M_s_scaled = L2_dist(f_s, protos_scaled)
-    p1_scaled = F.softmax(-M_s_scaled / temperature, dim=2)
+    p1_scaled = F.softmax(-M_s_scaled / sigma, dim=2)
 
     M_t_scaled = L2_dist(f_t, protos_scaled)
-    p2_scaled = F.softmax(-M_t_scaled / temperature, dim=2)
+    p2_scaled = F.softmax(-M_t_scaled / sigma, dim=2)
     
 
     if distance == 'MSE':
