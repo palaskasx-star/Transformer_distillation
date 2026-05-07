@@ -1,4 +1,11 @@
 ![ConceptKD](KD_main_figure.jpg)
+
+Teacher weights download:
+```bash
+wget -O vit_small_patch16_dinov3.lvd1689m.bin [https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin](https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin)
+```
+
+Train a ViT-T* using a DINOv3 ViT-S* pretrained teacher:
 ```bash
 python -m torch.distributed.run \
     --standalone \
@@ -6,7 +13,7 @@ python -m torch.distributed.run \
     --master_port=29500 \
     main.py \
     --data-path /path/to/imagenet \
-    --teacher-path /path/to/teacher/vit_small_patch16_dinov3.lvd1689m.bin \
+    --teacher-path ./vit_small_patch16_dinov3.lvd1689m.bin \
     --model vit_tiny_patch16_dinov3 \
     --teacher-model vit_small_patch16_dinov3 \
     --distillation-type soft \
