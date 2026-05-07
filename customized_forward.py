@@ -25,18 +25,9 @@ def register_forward(model, model_name, out_indices ):
     if any(x in model_name_lower.lower() for x in ['dinov3', 'eva02']):
         model.forward_features = MethodType(dinov3_forward_features, model)
         model.forward = MethodType(dinov3_forward, model)
-    elif any(x in model_name_lower for x in ['deit', 'deit3', 'dinov2', 'dino']):
+    elif any(x in model_name_lower for x in ['deit', 'deit3']):
         model.forward_features = MethodType(vit_forward_features, model)
         model.forward = MethodType(vit_forward, model)
-    elif 'cait' in model_name_lower:
-        model.forward_features = MethodType(cait_forward_features, model)
-        model.forward = MethodType(cait_forward, model)
-    elif 'regnety' in model_name_lower:
-        model.forward_features = MethodType(regnet_forward_features, model)
-        model.forward = MethodType(regnet_forward, model)
-    elif 'swin' in model_name_lower:
-        model.forward_features = MethodType(swin_forward_features, model)
-        model.forward = MethodType(swin_forward, model)
     else:
         raise RuntimeError(f'Not defined customized method forward for model {model_name}')
 
@@ -169,118 +160,4 @@ def vit_forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None,
     x = self.forward_head(x)
     return x, block_outs
 
-# cait
-def cait_forward_features(self, x, require_feat: bool = False):
-    x = self.patch_embed(x)
-    x = x + self.pos_embed
-    x = self.pos_drop(x)
 
-    block_outs = []
-    for idx, blk in enumerate(self.blocks):
-        x = blk(x)
-        if idx in self.out_indices:
-            block_outs.append(x)
-        else:
-            block_outs.append([])
-    cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
-
-    for i, blk in enumerate(self.blocks_token_only):
-        cls_tokens = blk(x, cls_tokens)
-    x = torch.cat((cls_tokens, x), dim=1)
-    x = self.norm(x)
-
-    if require_feat:
-        return x[:, 0], block_outs
-    else:
-        return x[:, 0]
-
-
-def cait_forward(self, x, require_feat: bool = True):
-    if require_feat:
-        x, block_outs = self.forward_features(x, require_feat=True)
-        x = self.head(x)
-        return x, block_outs
-    else:
-        x = self.forward_features(x)
-        x = self.head(x)
-        return x
-
-# --------------------
-# RegNetY (from timm)
-# --------------------
-def regnet_forward_features(self, x, require_feat: bool = False):
-    """
-    Custom forward_features for timm RegNetY-160.
-    Captures intermediate outputs after each stage.
-    """
-    block_outs = []
-
-    # Stem
-    x = self.stem(x)
-    block_outs.append(torch.nn.Unfold(kernel_size=8, stride=8)(x).permute(0, 2, 1))
-
-    # Stages (typical timm RegNet has 4 stages: s1-s4)
-    x = self.s1(x); block_outs.append(torch.nn.Unfold(kernel_size=4, stride=4)(x).permute(0, 2, 1))
-    x = self.s2(x); block_outs.append(torch.nn.Unfold(kernel_size=2, stride=2)(x).permute(0, 2, 1))
-    x = self.s3(x); block_outs.append(torch.nn.Unfold(kernel_size=1, stride=1)(x).permute(0, 2, 1))
-    x = self.s4(x); block_outs.append(torch.nn.Unfold(kernel_size=1, stride=1)(torch.nn.AdaptiveAvgPool2d(14)(x)).permute(0, 2, 1))
-
-
-    # Head
-    x = self.head.global_pool(x)
-    x = self.head.flatten(x)
-    x = self.head.fc(x)
-
-    if require_feat:
-        return x, block_outs
-    else:
-        return x
-
-
-def regnet_forward(self, x, require_feat: bool = True):
-    if require_feat:
-        logits, feats = self.forward_features(x, require_feat=True)
-        return logits, feats
-    else:
-        return self.forward_features(x)
-
-
-def swin_forward_features(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
-    """
-    Custom forward_features for Swin Transformer V2.
-    Captures intermediate outputs after each stage (layer).
-    """
-    x = self.patch_embed(x)
-    block_outs = []
-    
-    for idx, stage in enumerate(self.layers):
-        x = stage(x)
-        if idx in self.out_indices:
-            # Swin outputs feature maps as (B, H, W, C). 
-            # If your KD framework expects a sequence of tokens (B, N, C) like ViT, 
-            # we flatten the spatial dimensions.
-            B, H, W, C = x.shape
-            feat = x.view(B, H * W, C)
-            block_outs.append(feat)
-        else:
-            block_outs.append([])
-            
-    x = self.norm(x)
-    
-    if require_feat:
-        return x, block_outs
-    return x, block_outs
-
-
-def swin_forward(self, x: torch.Tensor, require_feat: bool = False) -> torch.Tensor:
-    """Forward pass for Swin Transformer V2."""
-    x, block_outs = self.forward_features(x, require_feat=True)
-    
-    # Swin typically outputs NHWC before the head. 
-    # timm's forward_head handles the pooling and flattening.
-    x = self.forward_head(x)
-    
-    if require_feat:
-        return x, block_outs
-    else:
-        return x, block_outs
