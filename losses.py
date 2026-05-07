@@ -46,8 +46,6 @@ class DistillationLoss(nn.Module):
         self.alpha = args.distillation_alpha
         self.K = args.K
 
-        self.normalize = args.normalize
-
         self.prototypes = prototypes
         self.projectors_nets = projectors_nets
 
