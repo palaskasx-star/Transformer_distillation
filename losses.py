@@ -114,17 +114,11 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=F
         dev = F_t.device
 
         if prototypes[idx].protos[0] is not None:
-            if delta == 0.0:
-                loss_mf_rand = torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_rand = layer_loss_w_concepts(
-                    F_s, F_t, K, normalize=normalize, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, sigma=sigma, grad_scale=grad_scale)
+            loss_mf_rand = layer_loss_w_concepts(
+                F_s, F_t, K, normalize=normalize, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, sigma=sigma, grad_scale=grad_scale)
         else:  
-            if delta == 0.0:
-                loss_mf_rand = torch.tensor(0.0, device=dev)
-            else:
-                loss_mf_rand = layer_loss_wo_concepts(
-                    F_s, F_t, K, normalize=normalize, sigma=sigma)
+            loss_mf_rand = layer_loss_wo_concepts(
+                F_s, F_t, K, normalize=normalize, sigma=sigma)
 
         losses.append(loss_mf_rand)
         
