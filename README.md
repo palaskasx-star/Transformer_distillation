@@ -1,13 +1,13 @@
 ![ConceptKD](KD_main_figure.jpg)
 
-To download the weights for the  DINOv3 ViT-S* teacher model use the following line:
+To download the weights for the  DINOv3 ViT-S* teacher model use the following command:
 ```bash
 wget -O vit_small_patch16_dinov3.lvd1689m.bin https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin
 ```
 
-The following experiments experiments reproduce the corresponding entries of table 2 of our paper.
+The following experiments reproduce the corresponding entries of Table 2 of our paper.
 
-To train a ViT-T* using a DINOv3 ViT-S* pretrained teacher with the ConceptKD method run this script:
+To train a ViT-T* using a DINOv3 ViT-S* pretrained teacher with the ConceptKD method, run this script:
 ```bash
 python -m torch.distributed.run \
     --standalone \
@@ -32,7 +32,7 @@ python -m torch.distributed.run \
     --output_dir ./experiments/
 ```
 
-To train the beseline for the ViT-T* run this script:
+To train the baseline for the ViT-T*, run this script:
 ```bash
 python -m torch.distributed.run \
     --standalone \
