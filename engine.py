@@ -42,7 +42,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             # loss = criterion(samples, outputs, targets)
             loss_base, loss_dist, loss_concept = criterion(samples, outputs, targets)
         
-        loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + args.delta * loss_concept 
+        loss = ((1 - args.distillation_alpha) * loss_base + args.distillation_alpha * loss_dist) + args.w_concept * loss_concept 
     
 
         loss_value = loss.item()
