@@ -1,9 +1,5 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
-#
-# 2022.10.14-Changed for building manifold kd
-#            Huawei Technologies Co., Ltd. <foss@huawei.com>
-#
 
 import os
 import json
