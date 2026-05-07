@@ -104,30 +104,27 @@ class DistillationLoss(nn.Module):
         return loss_base, loss_dist, loss_mf_rand
 
 
-def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_num=0, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, temperature=0.1, grad_scale=0.0):
+def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, normalize=False, distance='MSE', prototypes=None, projectors_nets=None, world_size=1, beta=0.0, gamma=0.0, delta=0.0, temperature=0.1, grad_scale=0.0):
     losses = [[]] 
 
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
         extra_tk_num = block_outs_s[id_s].shape[1] - block_outs_t[id_t].shape[1]
-        F_s = block_outs_s[id_s][:, extra_tk_num:, :]  # remove additional tokens
+        F_s = block_outs_s[id_s][:, extra_tk_num:, :] 
         F_t = block_outs_t[id_t]
 
         dev = F_t.device
 
-        if max_patch_num > 0:
-            F_s = merge(F_s, max_patch_num)
-            F_t = merge(F_t, max_patch_num)
         if prototypes[idx].protos[0] is not None or prototypes[idx].protos[1] is not None or prototypes[idx].protos[2] is not None:
             if delta == 0.0:
                 loss_mf_rand = torch.tensor(0.0, device=dev)
             else:
-                loss_mf_rand = layer_mf_loss_prototypes_rand(
+                loss_mf_rand = layer_loss_w_concepts(
                     F_s, F_t, K, normalize=normalize, distance=distance, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, temperature=temperature, grad_scale=grad_scale)
         else:  
             if delta == 0.0:
                 loss_mf_rand = torch.tensor(0.0, device=dev)
             else:
-                loss_mf_rand = layer_mf_loss_rand(
+                loss_mf_rand = layer_loss_wo_concepts(
                     F_s, F_t, K, normalize=normalize, distance=distance, temperature=temperature)
 
         losses[2].append(loss_mf_rand)
@@ -137,8 +134,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, max_patch_n
     
     return loss_mf_rand
 
-def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8): 
-    # manifold loss among random sampled patches
+def layer_loss_wo_concepts(F_s, F_t, K, normalize=False, distance='MSE', temperature=0.1, eps=1e-8): 
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
@@ -163,7 +159,7 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
     
     return loss_mf_rand
 
-def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, grad_scale=0.0, world_size=1):
+def layer_loss_w_concepts(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, grad_scale=0.0, world_size=1):
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
@@ -171,10 +167,8 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_s = projectors_net.projs[2](f_s)
 
-    # 1. Extract base prototypes
     protos = prototypes.protos[2].unsqueeze(0)
 
-    # 2. Normalize EVERYTHING first so normalization doesn't interfere with the scaler
     if normalize:
         f_s = normalize_mean_std(f_s)
         f_t = normalize_mean_std(f_t)
@@ -182,7 +176,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     else:
         protos_norm = protos
 
-    # 3. Create the two Prototype Pathways
     protos_unscaled = protos_norm 
     protos_scaled = ScaleGradient.apply(protos_norm, grad_scale)
 
@@ -217,17 +210,6 @@ def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', 
     dev = loss_mf_rand.device
     return loss_mf_rand  
     
-def merge(x, max_patch_num=196):
-    B, P, C = x.shape
-    if P <= max_patch_num:
-        return x
-    n = int(P ** (1/2))  # original patch num at each dim
-    m = int(max_patch_num ** (1/2))  # target patch num at each dim
-    merge_num = n // m  # merge every (merge_num x merge_num) adjacent patches
-    x = x.view(B, m, merge_num, m, merge_num, C)
-    merged = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, m * m, -1)
-    return merged
-
 
 
 @torch.no_grad()
