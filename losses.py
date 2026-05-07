@@ -169,6 +169,9 @@ def layer_loss_w_concepts(F_s, F_t, K, eps=1e-8, prototypes=None, projectors_net
     p2 = F.softmax(-M_t / sigma, dim=2)
     q2 = distributed_sinkhorn(M_t, nmb_iters=3, epsilon=0.05, world_size=world_size).detach()
 
+    print(M_t.shape)
+    print(M_s.shape)
+
     M_s_scaled = L2_dist(f_s, protos_scaled)
     p1_scaled = F.softmax(-M_s_scaled / sigma, dim=2)
 
