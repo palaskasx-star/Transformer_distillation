@@ -101,7 +101,7 @@ def evaluate(data_loader, model, device, criterion_dist: DistillationLoss, write
             output = model(images, require_feat=True)
             loss = criterion(output[0], target)
             target_onehot = torch.zeros_like(output[0]).scatter_(1, target.unsqueeze(1), 1)
-            loss_base, loss_dist, loss_mf_rand = criterion_dist(images, output, target_onehot)
+            loss_base, loss_dist, loss_concept = criterion_dist(images, output, target_onehot)
 
         acc1, acc5 = accuracy(output[0], target, topk=(1, 5))
 
