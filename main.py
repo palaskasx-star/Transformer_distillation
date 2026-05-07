@@ -203,8 +203,6 @@ def get_args_parser():
     parser.add_argument('--s-id', nargs='+', type=int, default=[-1])
     parser.add_argument('--t-id', nargs='+', type=int, default=[-1])
     
-    parser.add_argument('--normalize', action='store_true')
-    
     parser.add_argument('--use-prototypes', action='store_true')
     parser.add_argument('--prototypes-number', default=3000, type=int)
 
@@ -294,7 +292,7 @@ def main(args):
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
     if args.distillation_type != 'none':
-        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_normalize_{args.normalize}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.delta}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
+        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.delta}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
         if args.use_prototypes:
             extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
     else:
