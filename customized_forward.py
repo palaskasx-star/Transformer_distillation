@@ -1,9 +1,3 @@
-# 2022.10.14-Changed for building manifold kd
-#            Huawei Technologies Co., Ltd. <foss@huawei.com>
-#
-# Modified from Fackbook, Deit
-# {haozhiwei1, jianyuan.guo}@huawei.com
-#
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
 #
