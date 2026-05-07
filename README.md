@@ -1,6 +1,6 @@
 ![ConceptKD](KD_main_figure.jpg)
 
-Teacher weights download:
+To download the weights for the  DINOv3 ViT-S* teacher model use the following line:
 ```bash
 wget -O vit_small_patch16_dinov3.lvd1689m.bin https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin
 ```
