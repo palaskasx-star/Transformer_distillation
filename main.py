@@ -209,6 +209,8 @@ def get_args_parser():
     parser.add_argument('--orthogonal-projector', action='store_true',
                 help='Apply orthogonal parametrization to the linear projector.')
 
+    parser.add_argument('--grad-scale', default=0.1, type=float)
+
     parser.add_argument('--centroids-path', default='', type=str, 
                 help='Path to the saved centroids .pth file to use as frozen prototypes')
 
@@ -217,7 +219,6 @@ def get_args_parser():
 
     parser.add_argument('--sigma', default=0.1, type=float)
 
-    parser.add_argument('--grad-scale', default=0.1, type=float)
     return parser
 
 
