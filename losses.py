@@ -44,7 +44,6 @@ class DistillationLoss(nn.Module):
         self.layer_ids_s = args.s_id
         self.layer_ids_t = args.t_id
         self.alpha = args.distillation_alpha
-        self.beta = args.distillation_beta
         self.K = args.K
 
         self.normalize = args.normalize
@@ -161,14 +160,12 @@ def layer_mf_loss_rand(F_s, F_t, K, normalize=False, distance='MSE', temperature
         M_diff = M_t - M_s
         loss_mf_rand = (M_diff * M_diff).mean()
     elif distance == 'KL':
-        M_s = (M_s + 1) / 2
-        M_t = (M_t + 1) / 2
-        M_s = M_s / M_s.sum(dim=-1, keepdim=True)
-        M_t = M_t / M_t.sum(dim=-1, keepdim=True)
+        M_s = F.softmax(-M_t/ temperature, dim=2)
+        M_t = F.softmax(-M_s/ temperature, dim=2)
         loss_mf_rand = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2)) / 2
     dev = loss_mf_rand.device
     
-    return loss_mf_rand, torch.tensor(0.0, device=dev), torch.tensor(0.0, device=dev)
+    return loss_mf_rand
 
 def layer_mf_loss_prototypes_rand(F_s, F_t, K, normalize=False, distance='MSE', eps=1e-8, prototypes=None, projectors_net=None, temperature=0.1, grad_scale=0.0, world_size=1):
     bsz, patch_num, _ = F_s.shape
