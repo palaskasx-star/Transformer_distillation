@@ -5,7 +5,9 @@ Teacher weights download:
 wget -O vit_small_patch16_dinov3.lvd1689m.bin https://huggingface.co/timm/vit_small_patch16_dinov3.lvd1689m/resolve/main/pytorch_model.bin
 ```
 
-Train a ViT-T* using a DINOv3 ViT-S* pretrained teacher:
+The following experiments experiments reproduce the corresponding entries of table 2 of our paper.
+
+To train a ViT-T* using a DINOv3 ViT-S* pretrained teacher with the ConceptKD method run this script:
 ```bash
 python -m torch.distributed.run \
     --standalone \
@@ -29,3 +31,16 @@ python -m torch.distributed.run \
     --sigma 0.1 \
     --output_dir ./experiments/
 ```
+
+To train the beseline for the ViT-T* run this script:
+```bash
+python -m torch.distributed.run \
+    --standalone \
+    --nproc_per_node=4 \
+    --master_port=29500 \
+    main.py \
+    --data-path /path/to/imagenet \
+    --model vit_tiny_patch16_dinov3 \
+    --output_dir ./experiments/
+```
+
