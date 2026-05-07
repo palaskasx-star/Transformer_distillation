@@ -197,7 +197,7 @@ def get_args_parser():
     )
 
     # my parameters
-    parser.add_argument('--delta', default=1.0, type=float)
+    parser.add_argument('--w_concept', default=1.0, type=float)
     parser.add_argument('--K', default=192, type=int)
 
     parser.add_argument('--s-id', nargs='+', type=int, default=[-1])
@@ -292,7 +292,7 @@ def main(args):
     # Use a different output directory for each run
     output_dir = Path(args.output_dir)
     if args.distillation_type != 'none':
-        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.delta}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
+        extra_info = f"s_{args.model}_t_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_d_{args.distillation_type}_cj_{args.color_jitter}_a_{args.distillation_alpha}_d_{args.w_concept}_K_{args.K}_sids_{''.join(map(str, args.s_id))}_tids_{''.join(map(str, args.t_id))}"
         if args.use_prototypes:
             extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
     else:
@@ -454,7 +454,7 @@ def main(args):
             proto_list = []
             projector_list = []
                 
-            if args.delta == 0.0:
+            if args.w_concept == 0.0:
                 proto_list.append(None)
                 projector_list.append(None)
             else:
