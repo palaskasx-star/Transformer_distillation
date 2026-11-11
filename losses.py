@@ -107,7 +107,7 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, prototypes=
                 F_s, F_t, K, prototypes=prototypes[idx], projectors_net=projectors_nets[idx], world_size=world_size, sigma=sigma, grad_scale=grad_scale)
         else:  
             loss_concept = layer_loss_wo_concepts(
-                F_s, F_t, K, sigma=sigma)
+                F_s, F_t, K, projectors_net=projectors_nets[idx], sigma=sigma)
 
         losses.append(loss_concept)
         
@@ -115,12 +115,16 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, prototypes=
     
     return loss_concept
 
-def layer_loss_wo_concepts(F_s, F_t, K, sigma=0.1, eps=1e-8): 
+def layer_loss_wo_concepts(F_s, F_t, K, projectors_net=None, sigma=0.1, eps=1e-8): 
     bsz, patch_num, _ = F_s.shape
     sampler = torch.randperm(bsz * patch_num)[:K]
 
     f_s = F_s.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
     f_t = F_t.reshape(bsz * patch_num, -1)[sampler].unsqueeze(0)
+
+    # project the student into the teacher's feature space (before normalization)
+    if projectors_net is not None and projectors_net.projs[0] is not None:
+        f_s = projectors_net.projs[0](f_s)
 
     f_s = normalize_mean_std(f_s)
     f_t = normalize_mean_std(f_t)
@@ -128,8 +132,8 @@ def layer_loss_wo_concepts(F_s, F_t, K, sigma=0.1, eps=1e-8):
     M_s = L2_dist(f_s, f_s)
     M_t = L2_dist(f_t, f_t) 
 
-    M_s = F.softmax(-M_t/ sigma, dim=2)
-    M_t = F.softmax(-M_s/ sigma, dim=2)
+    p1 = F.softmax(-M_s / sigma, dim=2)   # projected student relations
+    p2 = F.softmax(-M_t / sigma, dim=2)   # teacher relations (target)
     loss_concept = - torch.mean(torch.sum(p2 * torch.log(p1 + 1e-6), dim=2)) / 2
     
     return loss_concept
