@@ -93,9 +93,12 @@ def mf_loss(block_outs_s, block_outs_t, layer_ids_s, layer_ids_t, K, prototypes=
     losses = [] 
 
     for idx, (id_s, id_t) in enumerate(zip(layer_ids_s, layer_ids_t)):
-        extra_tk_num = block_outs_s[id_s].shape[1] - block_outs_t[id_t].shape[1]
-        F_s = block_outs_s[id_s][:, extra_tk_num:, :] 
         F_t = block_outs_t[id_t]
+        extra_tk_num = block_outs_s[id_s].shape[1] - F_t.shape[1]
+        assert extra_tk_num >= 0, (
+            f"student layer {id_s} has {block_outs_s[id_s].shape[1]} tokens but teacher layer {id_t} "
+            f"has {F_t.shape[1]}; use the same patch size/resolution or interpolate the patch grid")
+        F_s = block_outs_s[id_s][:, extra_tk_num:, :]
 
         dev = F_t.device
 
@@ -214,4 +217,3 @@ def L2_dist(x, p):
 def normalize_mean_std(x, eps=1e-6):
     x_norm = (x - x.mean(dim=1, keepdim=True)) /  (x.std(dim=1, keepdim=True) + eps)
     return x_norm
-
