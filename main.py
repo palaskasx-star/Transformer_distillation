@@ -495,13 +495,33 @@ def main(args):
         proto_proj_module = ProtoProjectorWrapper(prototypes, projectors_nets).to(device)
         model.add_module("proto_proj_module", proto_proj_module)
     else:
+        # No prototypes (relational loss): still build one student -> teacher
+        # projector per layer pair, so the student's relations are computed
+        # in the teacher's feature space.
+        build_projectors = teacher_model is not None and args.w_concept != 0.0
+        if build_projectors:
+            images = torch.randn(1, 3, args.input_size, args.input_size, device=device)
+            with torch.no_grad():
+                _, features_teacher = teacher_model(images)
+                _, features_student = model(images)
+
         prototypes = []
         projectors_nets = []
         for i, feat in enumerate(args.s_id):
             proto_list = []
             projector_list = []
             proto_list.append(None)
-            projector_list.append(None)
+            if build_projectors:
+                feature_dim_teacher = features_teacher[args.t_id[i]].shape[-1]
+                feature_dim_student = features_student[args.s_id[i]].shape[-1]
+                print(f"Layer pair s{args.s_id[i]} -> t{args.t_id[i]}: "
+                      f"student dim {feature_dim_student} -> teacher dim {feature_dim_teacher} (relational)")
+                projector = torch.nn.Linear(feature_dim_student, feature_dim_teacher, bias=False).to(device)
+                if args.orthogonal_projector:
+                    projector = torch.nn.utils.parametrizations.orthogonal(projector, name='weight', orthogonal_map='matrix_exp')
+                projector_list.append(projector)
+            else:
+                projector_list.append(None)
             prototypes.append(proto_list)
             projectors_nets.append(projector_list)
 
