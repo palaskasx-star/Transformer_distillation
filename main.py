@@ -217,6 +217,14 @@ def get_args_parser():
 
     parser.add_argument('--sigma', default=0.1, type=float)
 
+    # Student width / depth (lets you train tiny students of any feature dimension)
+    parser.add_argument('--student-embed-dim', default=None, type=int,
+                help='Override the student embed dim (e.g. 128, 192, 256, 320).')
+    parser.add_argument('--student-num-heads', default=None, type=int,
+                help='Override the student num heads (default: embed_dim // 64, the DINOv3 head dim).')
+    parser.add_argument('--student-depth', default=None, type=int,
+                help='Override the student depth (all --s-id values must be smaller).')
+
     return parser
 
 
@@ -296,6 +304,10 @@ def main(args):
             extra_info += f"_prototypes_{args.prototypes_number}_frozen_{args.freeze_prototypes}"
     else:
         extra_info = f"model_{args.model}_teacher_{args.teacher_model}_bs_{args.batch_size*utils.get_world_size()}_cj_{args.color_jitter}"
+    if args.student_embed_dim is not None:
+        extra_info += f"_dim_{args.student_embed_dim}"
+    if args.student_depth is not None:
+        extra_info += f"_depth_{args.student_depth}"
 
     output_dir = output_dir / extra_info
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -303,6 +315,22 @@ def main(args):
     writer = get_writer(output_dir)
 
     print(f"Creating model: {args.model}")
+    model_kwargs = {}
+    if args.student_embed_dim is not None:
+        num_heads = args.student_num_heads or max(1, args.student_embed_dim // 64)
+        assert args.student_embed_dim % num_heads == 0, \
+            f"student embed dim {args.student_embed_dim} must be divisible by num heads {num_heads}"
+        model_kwargs['embed_dim'] = args.student_embed_dim
+        model_kwargs['num_heads'] = num_heads
+    elif args.student_num_heads is not None:
+        model_kwargs['num_heads'] = args.student_num_heads
+    if args.student_depth is not None:
+        model_kwargs['depth'] = args.student_depth
+        assert max(args.s_id) < args.student_depth, \
+            f"--s-id {args.s_id} contains a block index >= student depth {args.student_depth}"
+    if model_kwargs:
+        print(f"Student overrides: {model_kwargs}")
+
     model = create_model(
         args.model,
         pretrained=False,
@@ -310,6 +338,7 @@ def main(args):
         drop_rate=args.drop,
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
+        **model_kwargs,
     )
     register_forward(model, args.model, args.s_id)
 
@@ -432,8 +461,11 @@ def main(args):
         prototypes = []
         projectors_nets = []
         for i, feat in enumerate(args.s_id):
-            feature_dim_teacher = features_teacher[args.t_id[i]].shape[2]
-            feature_dim_student = features_student[args.s_id[i]].shape[2]
+            # last dim is the channel dim for (B, N, C) token outputs
+            feature_dim_teacher = features_teacher[args.t_id[i]].shape[-1]
+            feature_dim_student = features_student[args.s_id[i]].shape[-1]
+            print(f"Layer pair s{args.s_id[i]} -> t{args.t_id[i]}: "
+                  f"student dim {feature_dim_student} -> teacher dim {feature_dim_teacher}")
 
             # Create 3 prototype matrices and 3 projectors for each i
             proto_list = []
