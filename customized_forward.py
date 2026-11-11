@@ -6,6 +6,7 @@
 from types import MethodType
 
 import torch
+from torch.utils.checkpoint import checkpoint
 
 from typing import Optional
 
@@ -46,15 +47,15 @@ def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -
     x = self.norm_pre(x)
 
 
-    num_reg = self.reg_token.shape[1]
+    num_reg = self.reg_token.shape[1] if getattr(self, 'reg_token', None) is not None else 0
 
 
     if getattr(self, 'rope_mixed', False) and rot_pos_embed is not None:
         # Handle depth-dependent embeddings for mixed mode
         # pos embed has shape (depth, num_heads, H*W, dim) or (depth, batch_size, num_heads, H*W, dim)
-        for i, blk in enumerate(self.blocks):
+        for idx, blk in enumerate(self.blocks):
             if self.grad_checkpointing and not torch.jit.is_scripting():
-                x = checkpoint(blk, x, rope=rot_pos_embed[i])
+                x = checkpoint(blk, x, rope=rot_pos_embed[idx])
                 if idx in self.out_indices:
                     cls_t = x[:, 0:1] 
                     patch_t = x[:, 1+num_reg:] 
@@ -64,7 +65,7 @@ def dinov3_forward_features(self, x: torch.Tensor, require_feat: bool = False) -
                     block_outs.append([])
 
             else:
-                x = blk(x, rope=rot_pos_embed[i])
+                x = blk(x, rope=rot_pos_embed[idx])
                 if idx in self.out_indices:
                     cls_t = x[:, 0:1] 
                     patch_t = x[:, 1+num_reg:] 
@@ -151,5 +152,3 @@ def vit_forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None,
     x, block_outs = self.forward_features(x, attn_mask=attn_mask)
     x = self.forward_head(x)
     return x, block_outs
-
-
